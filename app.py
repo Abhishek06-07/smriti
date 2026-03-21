@@ -135,9 +135,9 @@ section[data-testid="stSidebar"] { display: none !important; }
 
 /* ── BUTTONS ── */
 .stButton > button {
-    background: #0F1B2D !important;
+    background: #1E3A5F !important;
     color: #FFFFFF !important;
-    border: none !important;
+    border: 1px solid #2D5A8E !important;
     border-radius: 8px !important;
     font-family: 'Inter', sans-serif !important;
     font-weight: 500 !important;
@@ -147,8 +147,13 @@ section[data-testid="stSidebar"] { display: none !important; }
     letter-spacing: 0.02em !important;
 }
 .stButton > button:hover {
-    background: #1E3A5F !important;
+    background: #2D5A8E !important;
     transform: translateY(-1px) !important;
+}
+/* Button text always white */
+.stButton > button p,
+.stButton > button span {
+    color: #FFFFFF !important;
 }
 [data-testid="stFormSubmitButton"] > button {
     background: linear-gradient(135deg, #0F1B2D, #1E3A5F) !important;
@@ -168,6 +173,36 @@ section[data-testid="stSidebar"] { display: none !important; }
     background: #FFFFFF !important;
     border: 1.5px solid #CBD5E1 !important;
     border-radius: 8px !important;
+    color: #0F1B2D !important;
+    font-size: 0.9rem !important;
+}
+.stTextInput > div > div > input:focus {
+    border-color: #1E3A5F !important;
+}
+
+/* ── SELECTBOX ── */
+div[data-baseweb="select"] > div {
+    background: #FFFFFF !important;
+    border: 1.5px solid #CBD5E1 !important;
+    border-radius: 8px !important;
+    color: #0F1B2D !important;
+}
+div[data-baseweb="select"] span,
+div[data-baseweb="select"] div {
+    color: #0F1B2D !important;
+}
+/* Dropdown options */
+ul[data-testid="stSelectboxVirtualDropdown"] li {
+    color: #0F1B2D !important;
+    background: #FFFFFF !important;
+}
+li[role="option"] {
+    color: #0F1B2D !important;
+    background: #FFFFFF !important;
+}
+li[role="option"]:hover {
+    background: #F1F4F8 !important;
+}
     color: #0F1B2D !important;
     font-family: 'Inter', sans-serif !important;
     font-size: 0.9rem !important;
@@ -229,6 +264,42 @@ h1, h2, h3 {
     color: #0F1B2D !important;
 }
 
+/* ── QUIZ TEXT FIX ── */
+/* Question text */
+.stMarkdown p { color: #0F1B2D !important; font-size: 0.95rem !important; }
+.stMarkdown strong { color: #0F1B2D !important; font-weight: 700 !important; }
+
+/* Radio button labels — options text */
+.stRadio label {
+    color: #0F1B2D !important;
+    font-size: 0.9rem !important;
+    font-weight: 400 !important;
+}
+.stRadio > div > label {
+    color: #0F1B2D !important;
+}
+/* Radio option text */
+[data-testid="stRadio"] label p {
+    color: #0F1B2D !important;
+    font-size: 0.9rem !important;
+}
+/* All paragraph text */
+p { color: #0F1B2D !important; }
+
+/* Caption text */
+.stCaption p {
+    color: #64748B !important;
+    font-size: 0.8rem !important;
+}
+
+/* General text color */
+[data-testid="stMarkdownContainer"] p {
+    color: #0F1B2D !important;
+}
+[data-testid="stMarkdownContainer"] {
+    color: #0F1B2D !important;
+}
+
 /* ── GOLD ACCENT LINE ── */
 .gold-line {
     height: 3px;
@@ -262,7 +333,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Nav buttons
-c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 1])
+c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 1, 1, 1])
 with c1:
     st.markdown("")
 with c2:
@@ -273,6 +344,8 @@ with c4:
     if st.button("📊 Dashboard",   use_container_width=True): st.session_state.page = "Dashboard"
 with c5:
     if st.button("📋 Review List", use_container_width=True): st.session_state.page = "Review List"
+with c6:
+    if st.button("🧪 Quiz",        use_container_width=True): st.session_state.page = "Quiz"
 
 page = st.session_state.page
 
@@ -684,4 +757,193 @@ elif page == "Review List":
                 if st.button("✅ Mark as Reviewed", key=f"btn_{topic['id']}"):
                     add_review(topic["id"], review_score * 10)
                     st.success("✅ Reviewed! Your curve has been updated.")
+                    st.rerun()
+
+# ════════════════════════════════════════════════════════
+# PAGE 5 — QUIZ
+# ════════════════════════════════════════════════════════
+elif page == "Quiz":
+    from question_generator import generate_questions, calculate_score, quiz_to_retention_boost
+
+    st.markdown("""
+    <div class='page-header'>
+        <div class='page-title'>AI Quiz</div>
+        <div class='page-subtitle'>Test your understanding — powered by Groq + Llama 3.3</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    topics = load_topics()
+
+    if not topics:
+        st.info("No topics yet! Click **➕ Add Topic** to add some.")
+    else:
+        # ── Topic selector
+        priority     = get_review_priority(topics)
+        topic_names  = [f"{t['topic_name']} ({t['subject']}) — {t['retention']}% retained" for t in priority]
+        selected_idx = st.selectbox("Select topic to quiz:", range(len(topic_names)),
+                                    format_func=lambda i: topic_names[i])
+        selected     = priority[selected_idx]
+
+        # ── Topic info
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Topic",       selected["topic_name"])
+        c2.metric("Retention",   f"{selected['retention']}%")
+        c3.metric("Status",      selected["label"])
+
+        st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
+
+        # ── Generate button
+        if "quiz_questions"   not in st.session_state: st.session_state.quiz_questions   = None
+        if "quiz_topic_id"    not in st.session_state: st.session_state.quiz_topic_id    = None
+        if "quiz_answers"     not in st.session_state: st.session_state.quiz_answers     = {}
+        if "quiz_submitted"   not in st.session_state: st.session_state.quiz_submitted   = False
+        if "quiz_result"      not in st.session_state: st.session_state.quiz_result      = None
+
+        # Reset quiz if topic changed
+        if st.session_state.quiz_topic_id != selected["id"]:
+            st.session_state.quiz_questions = None
+            st.session_state.quiz_answers   = {}
+            st.session_state.quiz_submitted = False
+            st.session_state.quiz_result    = None
+            st.session_state.quiz_topic_id  = selected["id"]
+
+        # ── Generate Questions
+        if not st.session_state.quiz_questions:
+            st.markdown(f"""
+            <div style='background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;
+                        padding:20px 24px;text-align:center;'>
+                <div style='font-size:2rem;margin-bottom:8px;'>🤖</div>
+                <div style='font-weight:600;color:#0F1B2D;font-size:1rem;'>
+                    AI will generate 3 questions on
+                </div>
+                <div style='color:#1E3A5F;font-size:1.2rem;font-weight:700;margin:6px 0;'>
+                    {selected['topic_name']}
+                </div>
+                <div style='color:#64748B;font-size:0.85rem;'>
+                    Difficulty adapts to your retention: {selected['retention']}%
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("")
+            if st.button("🚀 Generate Quiz Questions", use_container_width=True):
+                with st.spinner("🤖 AI generating questions..."):
+                    questions, error = generate_questions(
+                        topic_name          = selected["topic_name"],
+                        subject             = selected["subject"],
+                        understanding_score = selected["understanding_score"],
+                        retention_pct       = selected["retention"]
+                    )
+                if error:
+                    st.error(f"❌ Error: {error}")
+                else:
+                    st.session_state.quiz_questions = questions
+                    st.session_state.quiz_answers   = {}
+                    st.session_state.quiz_submitted = False
+                    st.rerun()
+
+        # ── Show Questions
+        elif not st.session_state.quiz_submitted:
+            st.markdown(f"### 📝 Quiz — {selected['topic_name']}")
+            st.caption(f"Answer all 3 questions · Difficulty based on {selected['retention']}% retention")
+            st.markdown("---")
+
+            for q in st.session_state.quiz_questions:
+                st.markdown(f"**Q{q['id']}. {q['question']}**")
+                options = q["options"]
+                choice  = st.radio(
+                    f"Select answer for Q{q['id']}:",
+                    options = list(options.keys()),
+                    format_func = lambda k, opts=options: f"{k}.  {opts[k]}",
+                    key     = f"q_{q['id']}",
+                    index   = None,
+                    label_visibility = "collapsed"
+                )
+                if choice:
+                    st.session_state.quiz_answers[str(q["id"])] = choice
+                st.markdown("")
+
+            # Submit
+            all_answered = len(st.session_state.quiz_answers) == len(st.session_state.quiz_questions)
+            if not all_answered:
+                st.warning(f"⚠️ {len(st.session_state.quiz_questions) - len(st.session_state.quiz_answers)} question(s) remaining")
+
+            col_sub, col_new = st.columns(2)
+            with col_sub:
+                if st.button("✅ Submit Quiz", use_container_width=True, disabled=not all_answered):
+                    result = calculate_score(
+                        st.session_state.quiz_questions,
+                        st.session_state.quiz_answers
+                    )
+                    st.session_state.quiz_result    = result
+                    st.session_state.quiz_submitted = True
+                    st.rerun()
+            with col_new:
+                if st.button("🔄 New Questions", use_container_width=True):
+                    st.session_state.quiz_questions = None
+                    st.session_state.quiz_answers   = {}
+                    st.session_state.quiz_submitted = False
+                    st.rerun()
+
+        # ── Show Results
+        elif st.session_state.quiz_submitted and st.session_state.quiz_result:
+            result   = st.session_state.quiz_result
+            score    = result["score_pct"]
+            correct  = result["correct"]
+            total    = result["total"]
+
+            # Score card
+            if score >= 80:
+                bg_col   = "#F0FDF4"; bd_col = "#059669"
+                emoji    = "🎉"; msg = "Excellent! Memory is strong!"
+            elif score >= 60:
+                bg_col   = "#FFFBEB"; bd_col = "#D97706"
+                emoji    = "👍"; msg = "Good job! Keep reviewing."
+            else:
+                bg_col   = "#FEF2F2"; bd_col = "#DC2626"
+                emoji    = "📚"; msg = "Need more practice! Review this topic."
+
+            st.markdown(f"""
+            <div style='background:{bg_col};border:2px solid {bd_col};
+                        border-radius:14px;padding:24px;text-align:center;
+                        margin-bottom:24px;'>
+                <div style='font-size:3rem;'>{emoji}</div>
+                <div style='font-size:2.5rem;font-weight:700;color:{bd_col};
+                            font-family:Georgia,serif;'>{score}%</div>
+                <div style='font-size:1rem;color:{bd_col};font-weight:600;'>
+                    {correct}/{total} correct — {msg}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Update retention via review
+            boost = quiz_to_retention_boost(score)
+            add_review(selected["id"], boost * 10)
+            st.success(f"✅ Retention updated based on quiz score!")
+
+            # Detailed results
+            st.markdown("### 📊 Detailed Results")
+            for r in result["results"]:
+                icon = "✅" if r["is_correct"] else "❌"
+                with st.expander(f"{icon} Q{r['id']}. {r['question']}"):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown(f"**Your answer:** {r['user_answer']}. {r['options'].get(r['user_answer'], 'Not answered')}")
+                    with c2:
+                        st.markdown(f"**Correct answer:** {r['correct_ans']}. {r['options'].get(r['correct_ans'], '')}")
+                    if r["explanation"]:
+                        st.info(f"💡 {r['explanation']}")
+
+            # Try again buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 Try Again", use_container_width=True):
+                    st.session_state.quiz_questions = None
+                    st.session_state.quiz_answers   = {}
+                    st.session_state.quiz_submitted = False
+                    st.session_state.quiz_result    = None
+                    st.rerun()
+            with col2:
+                if st.button("📋 Go to Review List", use_container_width=True):
+                    st.session_state.page = "Review List"
                     st.rerun()
