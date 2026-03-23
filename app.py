@@ -883,8 +883,8 @@ elif page == "Quiz":
 
             st.markdown("")
             if st.button("🚀 Generate Questions", use_container_width=True, key="quiz_generate"):
-                with st.spinner(f"🤖 Generating {sel_level['name']} level questions..."):
-                    questions, error = generate_questions(
+                with st.spinner(f"🔍 Fetching web content + generating {sel_level['name']} questions..."):
+                    questions, context, error = generate_questions(
                         topic_name          = selected["topic_name"],
                         subject             = selected["subject"],
                         bloom_level         = st.session_state.selected_bloom,
@@ -895,22 +895,39 @@ elif page == "Quiz":
                     st.error(f"❌ {error}")
                 else:
                     st.session_state.quiz_questions = questions
+                    st.session_state.quiz_context   = context
                     st.session_state.quiz_answers   = {}
                     st.session_state.quiz_submitted = False
+                    # Show source info
+                    if context:
+                        st.success(f"✅ {len(questions)} questions generated from web content!")
+                    else:
+                        st.info(f"✅ {len(questions)} questions generated from AI knowledge!")
                     st.rerun()
 
         # ── SHOW QUESTIONS ─────────────────────────────
         elif not st.session_state.quiz_submitted:
+            ctx      = st.session_state.get("quiz_context")
+            src_text = "📡 Web content based" if ctx else "🤖 AI knowledge based"
+            n_q      = len(st.session_state.quiz_questions)
+
             st.markdown(f"""
-            <div style='display:flex;align-items:center;gap:10px;margin-bottom:12px;'>
-                <span style='font-size:1.5rem;'>{sel_level['emoji']}</span>
-                <div>
-                    <div style='font-weight:700;color:#0F1B2D;font-size:1.1rem;'>
-                        {sel_level['name']} Level Quiz — {selected['topic_name']}
+            <div style='display:flex;align-items:center;justify-content:space-between;
+                        margin-bottom:12px;flex-wrap:wrap;gap:8px;'>
+                <div style='display:flex;align-items:center;gap:10px;'>
+                    <span style='font-size:1.5rem;'>{sel_level['emoji']}</span>
+                    <div>
+                        <div style='font-weight:700;color:#0F1B2D;font-size:1.1rem;'>
+                            {sel_level['name']} Level Quiz — {selected['topic_name']}
+                        </div>
+                        <div style='color:#64748B;font-size:0.82rem;'>
+                            Bloom's L{st.session_state.selected_bloom} · {sel_level['difficulty']} · {n_q} questions
+                        </div>
                     </div>
-                    <div style='color:#64748B;font-size:0.82rem;'>
-                        Bloom's L{st.session_state.selected_bloom} · {sel_level['difficulty']} · 3 questions
-                    </div>
+                </div>
+                <div style='background:#F1F4F8;border-radius:8px;padding:6px 12px;
+                            font-size:11px;color:#64748B;'>
+                    {src_text}
                 </div>
             </div>
             """, unsafe_allow_html=True)

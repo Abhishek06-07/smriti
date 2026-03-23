@@ -3,6 +3,8 @@ scikit-learn
 pandas
 numpy
 plotly
-groq-api
+groq 
 wikipedia-api 
 duckduckgo-search
+dotenv
+pathlib
