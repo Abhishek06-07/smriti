@@ -3,3 +3,6 @@ scikit-learn
 pandas
 numpy
 plotly
+groq-api
+wikipedia-api 
+duckduckgo-search

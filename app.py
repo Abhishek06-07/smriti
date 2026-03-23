@@ -337,15 +337,15 @@ c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 1, 1, 1])
 with c1:
     st.markdown("")
 with c2:
-    if st.button("🏠 Home",         use_container_width=True): st.session_state.page = "Home"
+    if st.button("🏠 Home",         use_container_width=True, key="nav_home"):  st.session_state.page = "Home"
 with c3:
-    if st.button("➕ Add Topic",    use_container_width=True): st.session_state.page = "Add Topic"
+    if st.button("➕ Add Topic",    use_container_width=True, key="nav_add"):   st.session_state.page = "Add Topic"
 with c4:
-    if st.button("📊 Dashboard",   use_container_width=True): st.session_state.page = "Dashboard"
+    if st.button("📊 Dashboard",   use_container_width=True, key="nav_dash"):  st.session_state.page = "Dashboard"
 with c5:
-    if st.button("📋 Review List", use_container_width=True): st.session_state.page = "Review List"
+    if st.button("📋 Review List", use_container_width=True, key="nav_review"):st.session_state.page = "Review List"
 with c6:
-    if st.button("🧪 Quiz",        use_container_width=True): st.session_state.page = "Quiz"
+    if st.button("🧪 Quiz",        use_container_width=True, key="nav_quiz"):  st.session_state.page = "Quiz"
 
 page = st.session_state.page
 
@@ -760,15 +760,18 @@ elif page == "Review List":
                     st.rerun()
 
 # ════════════════════════════════════════════════════════
-# PAGE 5 — QUIZ
+# PAGE 5 — QUIZ (Bloom's Taxonomy)
 # ════════════════════════════════════════════════════════
 elif page == "Quiz":
-    from question_generator import generate_questions, calculate_score, quiz_to_retention_boost
+    from question_generator import (
+        generate_questions, calculate_score,
+        quiz_to_retention_boost, BLOOMS_LEVELS
+    )
 
     st.markdown("""
     <div class='page-header'>
         <div class='page-title'>AI Quiz</div>
-        <div class='page-subtitle'>Test your understanding — powered by Groq + Llama 3.3</div>
+        <div class='page-subtitle'>Bloom's Taxonomy — 6 levels of understanding · Powered by Groq + Llama 3.3</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -777,100 +780,165 @@ elif page == "Quiz":
     if not topics:
         st.info("No topics yet! Click **➕ Add Topic** to add some.")
     else:
-        # ── Topic selector
         priority     = get_review_priority(topics)
-        topic_names  = [f"{t['topic_name']} ({t['subject']}) — {t['retention']}% retained" for t in priority]
-        selected_idx = st.selectbox("Select topic to quiz:", range(len(topic_names)),
-                                    format_func=lambda i: topic_names[i])
-        selected     = priority[selected_idx]
+        topic_names  = [f"{t['topic_name']} ({t['subject']}) — {t['retention']}% retained"
+                        for t in priority]
+        selected_idx = st.selectbox(
+            "Select topic to quiz:",
+            range(len(topic_names)),
+            format_func=lambda i: topic_names[i]
+        )
+        selected = priority[selected_idx]
 
-        # ── Topic info
         c1, c2, c3 = st.columns(3)
-        c1.metric("Topic",       selected["topic_name"])
-        c2.metric("Retention",   f"{selected['retention']}%")
-        c3.metric("Status",      selected["label"])
+        c1.metric("Topic",     selected["topic_name"])
+        c2.metric("Retention", f"{selected['retention']}%")
+        c3.metric("Status",    selected["label"])
 
         st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
 
-        # ── Generate button
-        if "quiz_questions"   not in st.session_state: st.session_state.quiz_questions   = None
-        if "quiz_topic_id"    not in st.session_state: st.session_state.quiz_topic_id    = None
-        if "quiz_answers"     not in st.session_state: st.session_state.quiz_answers     = {}
-        if "quiz_submitted"   not in st.session_state: st.session_state.quiz_submitted   = False
-        if "quiz_result"      not in st.session_state: st.session_state.quiz_result      = None
+        # ── Bloom's Level Selector ──────────────────────
+        st.markdown("### 🎓 Select Bloom's Taxonomy Level")
+        st.caption("Higher levels = deeper understanding test")
 
-        # Reset quiz if topic changed
-        if st.session_state.quiz_topic_id != selected["id"]:
+        bloom_cols = st.columns(6)
+
+        if "selected_bloom" not in st.session_state:
+            st.session_state.selected_bloom = 1
+
+        for i, (key, info) in enumerate(BLOOMS_LEVELS.items()):
+            with bloom_cols[i]:
+                is_active = st.session_state.selected_bloom == key
+                border    = f"2px solid {info['color']}" if is_active else "1px solid #E2E8F0"
+                bg        = f"{info['color']}15"        if is_active else "#FFFFFF"
+                st.markdown(f"""
+                <div style='background:{bg};border:{border};border-radius:10px;
+                            padding:10px 6px;text-align:center;margin-bottom:6px;'>
+                    <div style='font-size:1.4rem;'>{info['emoji']}</div>
+                    <div style='font-size:11px;font-weight:700;color:{info['color']};'>L{key}</div>
+                    <div style='font-size:10px;color:#374151;font-weight:600;'>{info['name']}</div>
+                    <div style='font-size:9px;color:#64748B;margin-top:2px;'>{info['difficulty']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button(f"Select", key=f"bloom_{key}", use_container_width=True):
+                    st.session_state.selected_bloom  = key
+                    st.session_state.quiz_questions  = None
+                    st.session_state.quiz_answers    = {}
+                    st.session_state.quiz_submitted  = False
+                    st.session_state.quiz_result     = None
+                    st.rerun()
+
+        # Show selected level info
+        sel_level = BLOOMS_LEVELS[st.session_state.selected_bloom]
+        st.markdown(f"""
+        <div style='background:{sel_level['color']}10;border-left:4px solid {sel_level['color']};
+                    border-radius:8px;padding:12px 16px;margin:12px 0;'>
+            <span style='font-weight:700;color:{sel_level['color']};'>
+                {sel_level['emoji']} L{st.session_state.selected_bloom} — {sel_level['name']}
+            </span>
+            <span style='color:#374151;font-size:0.9rem;margin-left:8px;'>
+                {sel_level['description']}
+            </span><br/>
+            <span style='color:#64748B;font-size:0.82rem;'>
+                Keywords: {sel_level['keywords']}
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
+
+        # ── Session state ──────────────────────────────
+        if "quiz_questions" not in st.session_state: st.session_state.quiz_questions = None
+        if "quiz_topic_id"  not in st.session_state: st.session_state.quiz_topic_id  = None
+        if "quiz_answers"   not in st.session_state: st.session_state.quiz_answers   = {}
+        if "quiz_submitted" not in st.session_state: st.session_state.quiz_submitted = False
+        if "quiz_result"    not in st.session_state: st.session_state.quiz_result    = None
+
+        # Reset if topic or bloom level changed
+        topic_bloom_key = f"{selected['id']}_{st.session_state.selected_bloom}"
+        if st.session_state.quiz_topic_id != topic_bloom_key:
             st.session_state.quiz_questions = None
             st.session_state.quiz_answers   = {}
             st.session_state.quiz_submitted = False
             st.session_state.quiz_result    = None
-            st.session_state.quiz_topic_id  = selected["id"]
+            st.session_state.quiz_topic_id  = topic_bloom_key
 
-        # ── Generate Questions
+        # ── GENERATE ───────────────────────────────────
         if not st.session_state.quiz_questions:
             st.markdown(f"""
             <div style='background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;
-                        padding:20px 24px;text-align:center;'>
+                        padding:24px;text-align:center;'>
                 <div style='font-size:2rem;margin-bottom:8px;'>🤖</div>
-                <div style='font-weight:600;color:#0F1B2D;font-size:1rem;'>
-                    AI will generate 3 questions on
+                <div style='font-weight:700;color:#0F1B2D;font-size:1.1rem;'>
+                    Generate {sel_level['emoji']} {sel_level['name']} Questions
                 </div>
-                <div style='color:#1E3A5F;font-size:1.2rem;font-weight:700;margin:6px 0;'>
-                    {selected['topic_name']}
+                <div style='color:#1E3A5F;font-size:1rem;font-weight:600;margin:4px 0;'>
+                    {selected['topic_name']} · {selected['subject']}
                 </div>
                 <div style='color:#64748B;font-size:0.85rem;'>
-                    Difficulty adapts to your retention: {selected['retention']}%
+                    3 questions · {sel_level['difficulty']} difficulty · Bloom's L{st.session_state.selected_bloom}
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
             st.markdown("")
-            if st.button("🚀 Generate Quiz Questions", use_container_width=True):
-                with st.spinner("🤖 AI generating questions..."):
+            if st.button("🚀 Generate Questions", use_container_width=True, key="quiz_generate"):
+                with st.spinner(f"🤖 Generating {sel_level['name']} level questions..."):
                     questions, error = generate_questions(
                         topic_name          = selected["topic_name"],
                         subject             = selected["subject"],
+                        bloom_level         = st.session_state.selected_bloom,
                         understanding_score = selected["understanding_score"],
-                        retention_pct       = selected["retention"]
+                        retention_pct       = selected["retention"],
                     )
                 if error:
-                    st.error(f"❌ Error: {error}")
+                    st.error(f"❌ {error}")
                 else:
                     st.session_state.quiz_questions = questions
                     st.session_state.quiz_answers   = {}
                     st.session_state.quiz_submitted = False
                     st.rerun()
 
-        # ── Show Questions
+        # ── SHOW QUESTIONS ─────────────────────────────
         elif not st.session_state.quiz_submitted:
-            st.markdown(f"### 📝 Quiz — {selected['topic_name']}")
-            st.caption(f"Answer all 3 questions · Difficulty based on {selected['retention']}% retention")
+            st.markdown(f"""
+            <div style='display:flex;align-items:center;gap:10px;margin-bottom:12px;'>
+                <span style='font-size:1.5rem;'>{sel_level['emoji']}</span>
+                <div>
+                    <div style='font-weight:700;color:#0F1B2D;font-size:1.1rem;'>
+                        {sel_level['name']} Level Quiz — {selected['topic_name']}
+                    </div>
+                    <div style='color:#64748B;font-size:0.82rem;'>
+                        Bloom's L{st.session_state.selected_bloom} · {sel_level['difficulty']} · 3 questions
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
             st.markdown("---")
 
             for q in st.session_state.quiz_questions:
                 st.markdown(f"**Q{q['id']}. {q['question']}**")
                 options = q["options"]
                 choice  = st.radio(
-                    f"Select answer for Q{q['id']}:",
-                    options = list(options.keys()),
-                    format_func = lambda k, opts=options: f"{k}.  {opts[k]}",
-                    key     = f"q_{q['id']}",
-                    index   = None,
+                    f"Q{q['id']}",
+                    options          = list(options.keys()),
+                    format_func      = lambda k, opts=options: f"{k}.  {opts[k]}",
+                    key              = f"q_{q['id']}",
+                    index            = None,
                     label_visibility = "collapsed"
                 )
                 if choice:
                     st.session_state.quiz_answers[str(q["id"])] = choice
                 st.markdown("")
 
-            # Submit
             all_answered = len(st.session_state.quiz_answers) == len(st.session_state.quiz_questions)
             if not all_answered:
-                st.warning(f"⚠️ {len(st.session_state.quiz_questions) - len(st.session_state.quiz_answers)} question(s) remaining")
+                remaining = len(st.session_state.quiz_questions) - len(st.session_state.quiz_answers)
+                st.warning(f"⚠️ {remaining} question(s) remaining")
 
             col_sub, col_new = st.columns(2)
             with col_sub:
-                if st.button("✅ Submit Quiz", use_container_width=True, disabled=not all_answered):
+                if st.button("✅ Submit Quiz", use_container_width=True, disabled=not all_answered, key="quiz_submit"):
                     result = calculate_score(
                         st.session_state.quiz_questions,
                         st.session_state.quiz_answers
@@ -879,71 +947,102 @@ elif page == "Quiz":
                     st.session_state.quiz_submitted = True
                     st.rerun()
             with col_new:
-                if st.button("🔄 New Questions", use_container_width=True):
+                if st.button("🔄 New Questions", use_container_width=True, key="quiz_new"):
                     st.session_state.quiz_questions = None
                     st.session_state.quiz_answers   = {}
                     st.session_state.quiz_submitted = False
                     st.rerun()
 
-        # ── Show Results
+        # ── RESULTS ────────────────────────────────────
         elif st.session_state.quiz_submitted and st.session_state.quiz_result:
-            result   = st.session_state.quiz_result
-            score    = result["score_pct"]
-            correct  = result["correct"]
-            total    = result["total"]
+            result  = st.session_state.quiz_result
+            score   = result["score_pct"]
+            correct = result["correct"]
+            total   = result["total"]
 
-            # Score card
             if score >= 80:
-                bg_col   = "#F0FDF4"; bd_col = "#059669"
-                emoji    = "🎉"; msg = "Excellent! Memory is strong!"
+                bg_col = "#F0FDF4"; bd_col = "#059669"; emoji = "🎉"
+                msg    = f"Excellent {sel_level['name']} level understanding!"
             elif score >= 60:
-                bg_col   = "#FFFBEB"; bd_col = "#D97706"
-                emoji    = "👍"; msg = "Good job! Keep reviewing."
+                bg_col = "#FFFBEB"; bd_col = "#D97706"; emoji = "👍"
+                msg    = f"Good! Keep practicing {sel_level['name']} level."
             else:
-                bg_col   = "#FEF2F2"; bd_col = "#DC2626"
-                emoji    = "📚"; msg = "Need more practice! Review this topic."
+                bg_col = "#FEF2F2"; bd_col = "#DC2626"; emoji = "📚"
+                msg    = f"Need more practice at {sel_level['name']} level."
 
             st.markdown(f"""
             <div style='background:{bg_col};border:2px solid {bd_col};
-                        border-radius:14px;padding:24px;text-align:center;
-                        margin-bottom:24px;'>
-                <div style='font-size:3rem;'>{emoji}</div>
+                        border-radius:14px;padding:24px;text-align:center;margin-bottom:20px;'>
+                <div style='font-size:2.5rem;'>{emoji}</div>
                 <div style='font-size:2.5rem;font-weight:700;color:{bd_col};
                             font-family:Georgia,serif;'>{score}%</div>
                 <div style='font-size:1rem;color:{bd_col};font-weight:600;'>
-                    {correct}/{total} correct — {msg}
+                    {correct}/{total} correct · Bloom's L{st.session_state.selected_bloom} — {sel_level['name']}
+                </div>
+                <div style='font-size:0.85rem;color:{bd_col};opacity:0.8;margin-top:4px;'>
+                    {msg}
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
-            # Update retention via review
-            boost = quiz_to_retention_boost(score)
+            # Update retention
+            boost = quiz_to_retention_boost(score, st.session_state.selected_bloom)
             add_review(selected["id"], boost * 10)
-            st.success(f"✅ Retention updated based on quiz score!")
+            st.success(f"✅ Retention updated! Bloom's L{st.session_state.selected_bloom} score recorded.")
 
             # Detailed results
-            st.markdown("### 📊 Detailed Results")
+            st.markdown("### 📊 Question Analysis")
             for r in result["results"]:
                 icon = "✅" if r["is_correct"] else "❌"
                 with st.expander(f"{icon} Q{r['id']}. {r['question']}"):
                     c1, c2 = st.columns(2)
                     with c1:
-                        st.markdown(f"**Your answer:** {r['user_answer']}. {r['options'].get(r['user_answer'], 'Not answered')}")
+                        ans_text = r['options'].get(r['user_answer'], 'Not answered')
+                        color    = "#059669" if r["is_correct"] else "#DC2626"
+                        st.markdown(
+                            f"**Your answer:** <span style='color:{color}'>{r['user_answer']}. {ans_text}</span>",
+                            unsafe_allow_html=True
+                        )
                     with c2:
-                        st.markdown(f"**Correct answer:** {r['correct_ans']}. {r['options'].get(r['correct_ans'], '')}")
+                        st.markdown(f"**Correct:** {r['correct_ans']}. {r['options'].get(r['correct_ans'], '')}")
+                    if r.get("bloom_keyword"):
+                        st.caption(f"Bloom's keyword: {r['bloom_keyword']}")
                     if r["explanation"]:
                         st.info(f"💡 {r['explanation']}")
 
-            # Try again buttons
-            col1, col2 = st.columns(2)
+            # Suggest next level
+            next_level_num = min(st.session_state.selected_bloom + 1, 6)
+            next_info      = BLOOMS_LEVELS[next_level_num]
+
+            if score >= 70 and next_level_num != st.session_state.selected_bloom:
+                st.markdown(f"""
+                <div style='background:#F0F9FF;border:1px solid #0891B2;border-radius:10px;
+                            padding:14px 18px;margin:16px 0;'>
+                    <span style='font-weight:700;color:#0891B2;'>🎯 Ready for next level?</span>
+                    <span style='color:#374151;'> Try
+                        {next_info['emoji']} L{next_level_num} — {next_info['name']}
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            col1, col2, col3 = st.columns(3)
             with col1:
-                if st.button("🔄 Try Again", use_container_width=True):
+                if st.button("🔄 Try Again", use_container_width=True, key="quiz_try_again"):
                     st.session_state.quiz_questions = None
                     st.session_state.quiz_answers   = {}
                     st.session_state.quiz_submitted = False
                     st.session_state.quiz_result    = None
                     st.rerun()
             with col2:
-                if st.button("📋 Go to Review List", use_container_width=True):
+                if score >= 70 and next_level_num != st.session_state.selected_bloom:
+                    if st.button(f"⬆️ Try L{next_level_num}", use_container_width=True, key="quiz_next_level"):
+                        st.session_state.selected_bloom  = next_level_num
+                        st.session_state.quiz_questions  = None
+                        st.session_state.quiz_answers    = {}
+                        st.session_state.quiz_submitted  = False
+                        st.session_state.quiz_result     = None
+                        st.rerun()
+            with col3:
+                if st.button("📋 Review List", use_container_width=True, key="quiz_review_list"):
                     st.session_state.page = "Review List"
                     st.rerun()
