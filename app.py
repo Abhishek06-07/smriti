@@ -570,7 +570,6 @@ with c8:
         st.session_state.user = None
         st.session_state.clear()
         st.rerun()
-    if st.button("🏆 Leaderboard", use_container_width=True, key="nav_leader"): st.session_state.page = "Leaderboard"
 
 page = st.session_state.page
 
