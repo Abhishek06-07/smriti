@@ -7,4 +7,4 @@ groq
 wikipedia-api 
 duckduckgo-search
 python-dotenv
-wikipedia-api
+supabase
