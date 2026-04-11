@@ -1,2 +1,7 @@
 .env
 venv/
+__pycache__/
+*.pyc
+smriti.db
+models/smriti_models.pkl
+*.pkl

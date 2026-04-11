@@ -2,7 +2,14 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-from database import init_db, add_topic, get_all_topics, add_review
+from database import (
+    init_db, add_topic, get_all_topics, add_review,
+    init_streak_table, mark_today_studied,
+    get_streak, get_total_study_days,
+    init_xp_table, add_xp, get_total_xp,
+    get_today_xp, get_xp_by_subject,
+    get_league, get_xp_history, LEAGUE_THRESHOLDS
+)
 from model import (
     get_retention_curve, current_retention,
     classify_topic, get_review_priority,
@@ -312,11 +319,134 @@ p { color: #0F1B2D !important; }
 .badge-strong { background:#DCFCE7; color:#166534; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600; }
 .badge-risk   { background:#FEF3C7; color:#92400E; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600; }
 .badge-weak   { background:#FEE2E2; color:#991B1B; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600; }
+
+/* ── STREAK CARD ── */
+.streak-card {
+    background: linear-gradient(135deg, #0F1B2D, #1E3A5F);
+    border-radius: 16px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(201,168,76,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+.streak-fire {
+    font-size: 3rem;
+    line-height: 1;
+    filter: drop-shadow(0 0 12px rgba(245,158,11,0.6));
+}
+.streak-number {
+    font-size: 3rem;
+    font-weight: 700;
+    color: #C9A84C;
+    font-family: Georgia, serif;
+    line-height: 1;
+}
+.streak-label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+}
+.streak-stat {
+    text-align: center;
+    padding: 0 16px;
+    border-left: 1px solid rgba(255,255,255,0.1);
+}
+
+/* ── BLOOM PROGRESS NODES ── */
+.bloom-path {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin: 16px 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 8px 0;
+}
+.bloom-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    min-width: 80px;
+}
+.bloom-node-circle {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    font-weight: 700;
+    border: 3px solid;
+    transition: all 0.3s;
+    position: relative;
+    z-index: 2;
+}
+.bloom-node-label {
+    font-size: 9px;
+    font-weight: 600;
+    margin-top: 6px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.bloom-connector {
+    width: 40px;
+    height: 3px;
+    margin-top: -26px;
+    position: relative;
+    z-index: 1;
+}
+
+/* ── MEMORY SCORE CARD ── */
+.memory-score-card {
+    background: #FFFFFF;
+    border-radius: 14px;
+    padding: 20px 24px;
+    border: 1px solid #E2E8F0;
+    box-shadow: 0 2px 8px rgba(15,27,45,0.06);
+    text-align: center;
+}
+.memory-score-title {
+    font-size: 11px;
+    color: #64748B;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.memory-score-value {
+    font-size: 3.5rem;
+    font-weight: 700;
+    font-family: Georgia, serif;
+    line-height: 1;
+}
+.memory-score-label {
+    font-size: 12px;
+    color: #64748B;
+    margin-top: 6px;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ── INIT DB ───────────────────────────────────────────────
 init_db()
+init_streak_table()
+init_xp_table()
+mark_today_studied()
+
+# Give streak XP once per day
+if "streak_xp_given" not in st.session_state:
+    add_xp("streak_daily", "Daily streak bonus")
+    st.session_state.streak_xp_given = True
 
 # ── SESSION STATE ─────────────────────────────────────────
 if "page" not in st.session_state:
@@ -333,19 +463,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Nav buttons
-c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 1, 1, 1])
+c1, c2, c3, c4, c5, c6, c7 = st.columns([1.5, 1, 1, 1, 1, 1, 1])
 with c1:
     st.markdown("")
 with c2:
-    if st.button("🏠 Home",         use_container_width=True, key="nav_home"):  st.session_state.page = "Home"
+    if st.button("🏠 Home",         use_container_width=True, key="nav_home"):   st.session_state.page = "Home"
 with c3:
-    if st.button("➕ Add Topic",    use_container_width=True, key="nav_add"):   st.session_state.page = "Add Topic"
+    if st.button("➕ Add Topic",    use_container_width=True, key="nav_add"):    st.session_state.page = "Add Topic"
 with c4:
-    if st.button("📊 Dashboard",   use_container_width=True, key="nav_dash"):  st.session_state.page = "Dashboard"
+    if st.button("📊 Dashboard",   use_container_width=True, key="nav_dash"):   st.session_state.page = "Dashboard"
 with c5:
-    if st.button("📋 Review List", use_container_width=True, key="nav_review"):st.session_state.page = "Review List"
+    if st.button("📋 Review List", use_container_width=True, key="nav_review"): st.session_state.page = "Review List"
 with c6:
-    if st.button("🧪 Quiz",        use_container_width=True, key="nav_quiz"):  st.session_state.page = "Quiz"
+    if st.button("🧪 Quiz",        use_container_width=True, key="nav_quiz"):   st.session_state.page = "Quiz"
+with c7:
+    if st.button("🏆 Leaderboard", use_container_width=True, key="nav_leader"): st.session_state.page = "Leaderboard"
 
 page = st.session_state.page
 
@@ -384,6 +516,135 @@ if page == "Home":
 
     topics = load_topics()
 
+    # ── IMPROVEMENT 1: STREAK CARD ────────────────────────
+    streak      = get_streak()
+    total_days  = get_total_study_days()
+
+    # Streak emoji based on count
+    if streak >= 30:   fire = "🔥🔥🔥"
+    elif streak >= 14: fire = "🔥🔥"
+    elif streak >= 7:  fire = "🔥"
+    elif streak >= 1:  fire = "⚡"
+    else:              fire = "💤"
+
+    streak_msg = (
+        "Legendary! 🏆" if streak >= 30 else
+        "On fire! Keep going!" if streak >= 14 else
+        "Great streak! Don't break it!" if streak >= 7 else
+        "Building momentum!" if streak >= 3 else
+        "Day 1 — every streak starts here!" if streak == 1 else
+        "Start your streak today!"
+    )
+
+    st.markdown(f"""
+    <div class='streak-card'>
+        <div style='display:flex;align-items:center;gap:16px;'>
+            <div class='streak-fire'>{fire}</div>
+            <div>
+                <div style='color:rgba(255,255,255,0.5);font-size:10px;
+                            text-transform:uppercase;letter-spacing:0.12em;font-weight:600;'>
+                    Study Streak
+                </div>
+                <div style='display:flex;align-items:baseline;gap:6px;'>
+                    <span class='streak-number'>{streak}</span>
+                    <span style='color:rgba(255,255,255,0.6);font-size:0.9rem;'>
+                        day{'s' if streak != 1 else ''}
+                    </span>
+                </div>
+                <div style='color:#C9A84C;font-size:0.82rem;margin-top:2px;'>
+                    {streak_msg}
+                </div>
+            </div>
+        </div>
+        <div style='display:flex;gap:0;'>
+            <div class='streak-stat'>
+                <div style='color:#FFFFFF;font-size:1.6rem;font-weight:700;
+                            font-family:Georgia,serif;'>{total_days}</div>
+                <div class='streak-label'>Total Days</div>
+            </div>
+            <div class='streak-stat'>
+                <div style='color:#22C55E;font-size:1.6rem;font-weight:700;
+                            font-family:Georgia,serif;'>{len(topics) if topics else 0}</div>
+                <div class='streak-label'>Topics</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── IMPROVEMENT 2: BLOOM'S PROGRESS NODES ────────────
+    st.markdown("#### 🎓 Bloom's Taxonomy — Your Level Journey")
+
+    # Get best bloom level achieved from session state
+    best_bloom  = st.session_state.get("best_bloom_achieved", 1)
+    bloom_data  = [
+        (1, "🧠", "Remember", "#6B7280"),
+        (2, "💡", "Understand", "#0891B2"),
+        (3, "⚙️", "Apply", "#059669"),
+        (4, "🔍", "Analyze", "#D97706"),
+        (5, "⚖️", "Evaluate", "#DC2626"),
+        (6, "🚀", "Create", "#7C3AED"),
+    ]
+
+    nodes_html = "<div class='bloom-path'>"
+    for i, (lvl, emoji, name, color) in enumerate(bloom_data):
+        is_done    = lvl < best_bloom
+        is_current = lvl == best_bloom
+        is_locked  = lvl > best_bloom
+
+        if is_done:
+            bg       = color
+            border   = color
+            txt      = "#FFFFFF"
+            opacity  = "1"
+            lbl_col  = color
+        elif is_current:
+            bg       = f"{color}20"
+            border   = color
+            txt      = color
+            opacity  = "1"
+            lbl_col  = color
+        else:
+            bg       = "#F1F4F8"
+            border   = "#CBD5E1"
+            txt      = "#94A3B8"
+            opacity  = "0.5"
+            lbl_col  = "#94A3B8"
+
+        pulse = "animation:pulse 1.5s infinite;" if is_current else ""
+
+        nodes_html += f"""
+        <div class='bloom-node' style='opacity:{opacity};'>
+            <div class='bloom-node-circle'
+                 style='background:{bg};border-color:{border};
+                        color:{txt};{pulse}'>
+                {'✓' if is_done else emoji}
+            </div>
+            <div class='bloom-node-label' style='color:{lbl_col};'>
+                L{lvl}<br/>{name}
+            </div>
+        </div>"""
+
+        if i < len(bloom_data) - 1:
+            conn_color = color if is_done else "#E2E8F0"
+            nodes_html += f"""
+            <div class='bloom-connector'
+                 style='background:{conn_color};
+                        margin-bottom:22px;'></div>"""
+
+    nodes_html += "</div>"
+    nodes_html += """
+    <style>
+    @keyframes pulse {
+        0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
+        70%  { box-shadow: 0 0 0 8px rgba(99,102,241,0); }
+        100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+    }
+    </style>"""
+
+    st.markdown(nodes_html, unsafe_allow_html=True)
+    st.caption(f"Currently at L{best_bloom} — Take a quiz to advance levels! 🎯")
+    st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
+
     if not topics:
         st.info("👋 Welcome to Smriti! Click **➕ Add Topic** above to start tracking your memory.")
     else:
@@ -392,11 +653,31 @@ if page == "Home":
         atrisk = [t for t in priority if "At-Risk" in t["label"]]
         strong = [t for t in priority if "Strong"  in t["label"]]
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("📚 Total Topics", len(topics))
-        c2.metric("💪 Strong",       len(strong))
-        c3.metric("⚠️ At-Risk",      len(atrisk))
-        c4.metric("🔴 Weak",         len(weak))
+        # ── IMPROVEMENT 3: MEMORY HEALTH SCORE ───────────
+        avg_ret    = int(sum(t["retention"] for t in priority) / len(priority))
+        if avg_ret >= 70:
+            score_color = "#059669"; score_label = "Excellent Memory Health! 🌟"
+        elif avg_ret >= 40:
+            score_color = "#D97706"; score_label = "Memory Needs Attention ⚠️"
+        else:
+            score_color = "#DC2626"; score_label = "Critical — Review Now! 🚨"
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("📚 Topics",  len(topics))
+        c2.metric("💪 Strong",  len(strong))
+        c3.metric("⚠️ At-Risk", len(atrisk))
+        c4.metric("🔴 Weak",    len(weak))
+
+        with c5:
+            st.markdown(f"""
+            <div class='memory-score-card'>
+                <div class='memory-score-title'>Memory Score</div>
+                <div class='memory-score-value' style='color:{score_color};'>
+                    {avg_ret}%
+                </div>
+                <div class='memory-score-label'>{score_label}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
 
@@ -507,7 +788,8 @@ elif page == "Add Topic":
                 st.error("Please enter a topic name!")
             else:
                 add_topic(topic_name.strip(), subject, understanding_score, str(date_learned))
-                st.success(f"✅ **'{topic_name}'** added to Smriti!")
+                xp_earned = add_xp("add_topic", topic_name.strip())
+                st.success(f"✅ **'{topic_name}'** added! +{xp_earned} XP 🌟")
                 st.balloons()
 
                 st.markdown("### 🔮 Predicted Memory Retention")
@@ -756,7 +1038,8 @@ elif page == "Review List":
                 )
                 if st.button("✅ Mark as Reviewed", key=f"btn_{topic['id']}"):
                     add_review(topic["id"], review_score * 10)
-                    st.success("✅ Reviewed! Your curve has been updated.")
+                    xp = add_xp("review_topic", topic["topic_name"])
+                    st.success(f"✅ Reviewed! +{xp} XP earned 🌟")
                     st.rerun()
 
 # ════════════════════════════════════════════════════════
@@ -1005,7 +1288,26 @@ elif page == "Quiz":
             # Update retention
             boost = quiz_to_retention_boost(score, st.session_state.selected_bloom)
             add_review(selected["id"], boost * 10)
-            st.success(f"✅ Retention updated! Bloom's L{st.session_state.selected_bloom} score recorded.")
+
+            # Add XP for quiz completion
+            quiz_activity = f"quiz_l{st.session_state.selected_bloom}"
+            xp_earned     = add_xp(quiz_activity, selected["topic_name"])
+            # Bonus XP for perfect score
+            if score == 100:
+                bonus_xp  = add_xp("quiz_100_bonus", "Perfect score!")
+                xp_earned += bonus_xp
+                st.success(f"✅ Retention updated! +{xp_earned} XP earned (including perfect score bonus!) 🌟")
+            else:
+                st.success(f"✅ Retention updated! +{xp_earned} XP earned! Bloom's L{st.session_state.selected_bloom} recorded.")
+
+            # Update best bloom level achieved
+            if score >= 70:
+                current_best = st.session_state.get("best_bloom_achieved", 1)
+                new_best     = min(6, st.session_state.selected_bloom + 1)
+                if new_best > current_best:
+                    st.session_state.best_bloom_achieved = new_best
+                    st.balloons()
+                    st.success(f"🎉 Level Up! You reached Bloom's L{new_best} — {BLOOMS_LEVELS[new_best]['name']}!")
 
             # Detailed results
             st.markdown("### 📊 Question Analysis")
@@ -1063,3 +1365,266 @@ elif page == "Quiz":
                 if st.button("📋 Review List", use_container_width=True, key="quiz_review_list"):
                     st.session_state.page = "Review List"
                     st.rerun()
+
+# ════════════════════════════════════════════════════════
+# PAGE 6 — LEADERBOARD
+# ════════════════════════════════════════════════════════
+elif page == "Leaderboard":
+
+    st.markdown("""
+    <div class='page-header'>
+        <div class='page-title'>🏆 Leaderboard</div>
+        <div class='page-subtitle'>Your XP ranking · Subject performance · League progress</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    topics     = load_topics()
+    total_xp   = get_total_xp()
+    today_xp   = get_today_xp()
+    league     = get_league(total_xp)
+    streak     = get_streak()
+    xp_history = get_xp_history(7)
+
+    _, league_name, league_color = league
+
+    # ── Next league info ──────────────────────────────
+    next_league    = None
+    xp_to_next     = 0
+    for i, (thresh, name, color) in enumerate(LEAGUE_THRESHOLDS):
+        if total_xp < thresh:
+            next_league = (thresh, name, color)
+            xp_to_next  = thresh - total_xp
+            break
+
+    # ── LEAGUE CARD ───────────────────────────────────
+    progress_pct = 0
+    if next_league:
+        cur_thresh   = league[0]
+        nxt_thresh   = next_league[0]
+        progress_pct = min(100, int(((total_xp - cur_thresh) / (nxt_thresh - cur_thresh)) * 100))
+
+    league_color_fade = league_color + "99"
+
+    # Build progress bar HTML separately to avoid nested f-string issues
+    if next_league:
+        next_league_name = next_league[1]
+        progress_html = (
+            "<div style='margin-top:16px;'>"
+            "<div style='display:flex;justify-content:space-between;margin-bottom:6px;'>"
+            "<span style='color:rgba(255,255,255,0.5);font-size:11px;'>" + league_name + "</span>"
+            "<span style='color:rgba(255,255,255,0.5);font-size:11px;'>" + next_league_name + "</span>"
+            "</div>"
+            "<div style='background:rgba(255,255,255,0.1);border-radius:999px;height:8px;'>"
+            "<div style='background:linear-gradient(90deg," + league_color + "," + league_color_fade + ");"
+            "width:" + str(progress_pct) + "%;height:8px;border-radius:999px;transition:width 0.5s;'></div>"
+            "</div>"
+            "<div style='color:rgba(255,255,255,0.4);font-size:10px;margin-top:4px;text-align:right;'>"
+            + str(progress_pct) + "% to next league</div>"
+            "</div>"
+        )
+        next_text = "Next: " + next_league_name + " in " + str(xp_to_next) + " XP"
+    else:
+        progress_html = ""
+        next_text     = "Maximum League Reached! 🏆"
+
+    st.markdown(
+        "<div style='background:linear-gradient(135deg,#0F1B2D,#1E3A5F);"
+        "border-radius:16px;padding:24px 28px;margin-bottom:24px;"
+        "border:1px solid rgba(201,168,76,0.3);'>"
+        "<div style='display:flex;align-items:center;"
+        "justify-content:space-between;flex-wrap:wrap;gap:16px;'>"
+        "<div>"
+        "<div style='color:rgba(255,255,255,0.45);font-size:10px;"
+        "text-transform:uppercase;letter-spacing:0.12em;"
+        "font-weight:600;margin-bottom:6px;'>Current League</div>"
+        "<div style='font-size:2rem;font-weight:700;color:" + league_color + ";"
+        "font-family:Georgia,serif;'>" + league_name + "</div>"
+        "<div style='color:rgba(255,255,255,0.5);font-size:0.85rem;margin-top:4px;'>"
+        + next_text + "</div>"
+        "</div>"
+        "<div style='display:flex;gap:28px;'>"
+        "<div style='text-align:center;'>"
+        "<div style='color:#C9A84C;font-size:2rem;font-weight:700;"
+        "font-family:Georgia,serif;'>" + str(total_xp) + "</div>"
+        "<div style='color:rgba(255,255,255,0.4);font-size:10px;"
+        "text-transform:uppercase;letter-spacing:0.1em;'>Total XP</div>"
+        "</div>"
+        "<div style='text-align:center;'>"
+        "<div style='color:#22C55E;font-size:2rem;font-weight:700;"
+        "font-family:Georgia,serif;'>+" + str(today_xp) + "</div>"
+        "<div style='color:rgba(255,255,255,0.4);font-size:10px;"
+        "text-transform:uppercase;letter-spacing:0.1em;'>Today XP</div>"
+        "</div>"
+        "<div style='text-align:center;'>"
+        "<div style='color:#F59E0B;font-size:2rem;font-weight:700;"
+        "font-family:Georgia,serif;'>🔥" + str(streak) + "</div>"
+        "<div style='color:rgba(255,255,255,0.4);font-size:10px;"
+        "text-transform:uppercase;letter-spacing:0.1em;'>Streak</div>"
+        "</div>"
+        "</div>"
+        "</div>"
+        + progress_html +
+        "</div>",
+        unsafe_allow_html=True
+    )
+
+    # ── ALL LEAGUES DISPLAY ───────────────────────────
+    st.markdown("### 🎯 League Tiers")
+    league_cols = st.columns(5)
+    league_info = [
+        ("🥉", "Bronze",  "#CD7F32", "0",    "100"),
+        ("🥈", "Silver",  "#94A3B8", "101",  "300"),
+        ("🥇", "Gold",    "#C9A84C", "301",  "600"),
+        ("💎", "Diamond", "#60A5FA", "601",  "1000"),
+        ("🏆", "Legend",  "#7C3AED", "1000+", "∞"),
+    ]
+    for i, (icon, name, color, low, high) in enumerate(league_info):
+        is_current = league_name.endswith(name)
+        with league_cols[i]:
+            st.markdown(f"""
+            <div style='background:{"linear-gradient(135deg,"+color+"22,"+color+"11)" if is_current else "#FFFFFF"};
+                        border:{"2px solid "+color if is_current else "1px solid #E2E8F0"};
+                        border-radius:12px;padding:14px 8px;text-align:center;
+                        box-shadow:{"0 4px 12px "+color+"44" if is_current else "none"};'>
+                <div style='font-size:1.8rem;'>{icon}</div>
+                <div style='font-weight:700;color:{color};font-size:0.9rem;'>{name}</div>
+                <div style='color:#64748B;font-size:10px;margin-top:4px;'>{low}–{high} XP</div>
+                {f"<div style='color:{color};font-size:10px;font-weight:600;'>← You are here</div>" if is_current else ""}
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
+
+    # ── SUBJECT LEADERBOARD ───────────────────────────
+    st.markdown("### 📊 Subject Ranking — Who's on Top?")
+
+    if not topics:
+        st.info("Add some topics to see subject rankings!")
+    else:
+        priority    = get_review_priority(topics)
+        subject_xp  = get_xp_by_subject(topics)
+
+        # Build subject stats
+        subject_stats = {}
+        for t in priority:
+            s = t["subject"]
+            if s not in subject_stats:
+                subject_stats[s] = {
+                    "topics":    0,
+                    "retention": [],
+                    "xp":        subject_xp.get(s, 0),
+                }
+            subject_stats[s]["topics"]    += 1
+            subject_stats[s]["retention"].append(t["retention"])
+
+        # Calculate averages and sort by XP
+        ranked = []
+        for subj, data in subject_stats.items():
+            avg_ret = int(sum(data["retention"]) / len(data["retention"]))
+            ranked.append({
+                "subject":   subj,
+                "avg_ret":   avg_ret,
+                "topics":    data["topics"],
+                "xp":        data["xp"],
+            })
+        ranked = sorted(ranked, key=lambda x: x["xp"], reverse=True)
+
+        # Medal icons
+        medals = ["🥇", "🥈", "🥉"]
+
+        for i, item in enumerate(ranked):
+            medal     = medals[i] if i < 3 else f"{i+1}."
+            ret       = item["avg_ret"]
+            ret_color = "#059669" if ret >= 70 else "#D97706" if ret >= 40 else "#DC2626"
+            bar_w     = max(5, ret)
+
+            ret_color_fade = ret_color + "88"
+            st.markdown(f"""
+            <div style='background:#FFFFFF;border:1px solid #E2E8F0;
+                        border-radius:12px;padding:16px 20px;margin-bottom:10px;
+                        box-shadow:0 1px 4px rgba(15,27,45,0.05);
+                        {"border-left:4px solid #C9A84C;" if i == 0 else ""}'>
+                <div style='display:flex;align-items:center;
+                            justify-content:space-between;flex-wrap:wrap;gap:12px;'>
+                    <div style='display:flex;align-items:center;gap:14px;'>
+                        <span style='font-size:1.8rem;'>{medal}</span>
+                        <div>
+                            <div style='font-weight:700;color:#0F1B2D;font-size:1rem;'>
+                                {item["subject"]}
+                            </div>
+                            <div style='color:#64748B;font-size:12px;'>
+                                {item["topics"]} topic{"s" if item["topics"] != 1 else ""}
+                            </div>
+                        </div>
+                    </div>
+                    <div style='display:flex;align-items:center;gap:24px;'>
+                        <div style='text-align:center;'>
+                            <div style='font-weight:700;color:{ret_color};font-size:1.2rem;
+                                        font-family:Georgia,serif;'>{ret}%</div>
+                            <div style='color:#64748B;font-size:10px;
+                                        text-transform:uppercase;'>Retention</div>
+                        </div>
+                        <div style='text-align:center;'>
+                            <div style='font-weight:700;color:#C9A84C;font-size:1.2rem;
+                                        font-family:Georgia,serif;'>{item["xp"]}</div>
+                            <div style='color:#64748B;font-size:10px;
+                                        text-transform:uppercase;'>XP</div>
+                        </div>
+                    </div>
+                </div>
+                <div style='margin-top:10px;background:#F1F4F8;
+                            border-radius:999px;height:6px;'>
+                    <div style='background:linear-gradient(90deg,{ret_color},{ret_color_fade});
+                                width:{bar_w}%;height:6px;border-radius:999px;'></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ── XP CHART ─────────────────────────────────
+        st.markdown("### 📈 XP Earned — Last 7 Days")
+        if xp_history:
+            df_xp = pd.DataFrame(xp_history, columns=["Date", "XP"])
+            df_xp = df_xp.sort_values("Date")
+            fig = px.bar(
+                df_xp, x="Date", y="XP",
+                color_discrete_sequence=["#1E3A5F"]
+            )
+            fig.update_layout(
+                height      = 280,
+                paper_bgcolor = "rgba(0,0,0,0)",
+                plot_bgcolor  = "#FFFFFF",
+                font          = dict(color="#64748B", size=11),
+                xaxis         = dict(gridcolor="#F1F4F8"),
+                yaxis         = dict(gridcolor="#F1F4F8"),
+                margin        = dict(t=20, b=40, l=40, r=20),
+                showlegend    = False,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Complete activities to see your XP history!")
+
+        # ── XP GUIDE ─────────────────────────────────
+        st.markdown("### 💡 How to Earn XP")
+        xp_guide = [
+            ("📖 Add a Topic",           "+10 XP"),
+            ("📋 Review a Topic",        "+15 XP"),
+            ("🧪 Quiz L1 (Remember)",    "+20 XP"),
+            ("🧪 Quiz L2 (Understand)",  "+25 XP"),
+            ("🧪 Quiz L3 (Apply)",       "+30 XP"),
+            ("🧪 Quiz L4 (Analyze)",     "+35 XP"),
+            ("🧪 Quiz L5 (Evaluate)",    "+40 XP"),
+            ("🧪 Quiz L6 (Create)",      "+50 XP"),
+            ("💯 Perfect Quiz Score",    "+10 XP bonus"),
+            ("🔥 Daily Streak",          "+5 XP/day"),
+        ]
+        cols = st.columns(2)
+        for i, (act, xp) in enumerate(xp_guide):
+            with cols[i % 2]:
+                st.markdown(f"""
+                <div style='background:#F8FAFC;border:1px solid #E2E8F0;
+                            border-radius:8px;padding:10px 14px;margin-bottom:8px;
+                            display:flex;justify-content:space-between;align-items:center;'>
+                    <span style='color:#374151;font-size:0.88rem;'>{act}</span>
+                    <span style='color:#C9A84C;font-weight:700;font-size:0.9rem;'>{xp}</span>
+                </div>
+                """, unsafe_allow_html=True)

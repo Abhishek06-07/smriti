@@ -6,5 +6,5 @@ plotly
 groq 
 wikipedia-api 
 duckduckgo-search
-dotenv
-pathlib
+python-dotenv
+wikipedia-api
