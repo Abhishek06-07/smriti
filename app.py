@@ -8,7 +8,8 @@ from database import (
     get_streak, get_total_study_days,
     init_xp_table, add_xp, get_total_xp,
     get_today_xp, get_xp_by_subject,
-    get_league, get_xp_history, LEAGUE_THRESHOLDS
+    get_league, get_xp_history, LEAGUE_THRESHOLDS,
+    sign_up, sign_in, sign_out
 )
 from model import (
     get_retention_curve, current_retention,
@@ -441,11 +442,92 @@ p { color: #0F1B2D !important; }
 init_db()
 init_streak_table()
 init_xp_table()
-mark_today_studied()
 
-# Give streak XP once per day
+# ── AUTH GATE ─────────────────────────────────────────────
+if "user" not in st.session_state:
+    st.session_state.user    = None
+if "auth_mode" not in st.session_state:
+    st.session_state.auth_mode = "login"
+
+# ── LOGIN / SIGNUP PAGE ───────────────────────────────────
+if not st.session_state.user:
+    st.markdown("""
+    <div style='max-width:420px;margin:60px auto;'>
+        <div style='text-align:center;margin-bottom:32px;'>
+            <div style='font-size:3.5rem;'>🧠</div>
+            <div style='font-family:Georgia,serif;font-size:2rem;
+                        font-weight:700;color:#0F1B2D;'>Smriti</div>
+            <div style='color:#64748B;font-size:0.9rem;margin-top:4px;'>
+                AI-Powered Memory Intelligence
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Center the form
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        # Toggle Login / Signup
+        mode_col1, mode_col2 = st.columns(2)
+        with mode_col1:
+            if st.button("🔑 Login", use_container_width=True, key="mode_login"):
+                st.session_state.auth_mode = "login"
+        with mode_col2:
+            if st.button("📝 Sign Up", use_container_width=True, key="mode_signup"):
+                st.session_state.auth_mode = "signup"
+
+        st.markdown("---")
+
+        if st.session_state.auth_mode == "login":
+            st.markdown("#### Welcome back!")
+            email    = st.text_input("Email", placeholder="you@example.com", key="login_email")
+            password = st.text_input("Password", type="password", key="login_pass")
+
+            if st.button("Login →", use_container_width=True, key="do_login"):
+                if not email or not password:
+                    st.error("Please enter email and password!")
+                else:
+                    with st.spinner("Logging in..."):
+                        user, error = sign_in(email, password)
+                    if user:
+                        st.session_state.user = user
+                        st.success("✅ Welcome back!")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {error}")
+
+        else:
+            st.markdown("#### Create Account")
+            email    = st.text_input("Email", placeholder="you@example.com", key="signup_email")
+            password = st.text_input("Password (min 6 chars)", type="password", key="signup_pass")
+            confirm  = st.text_input("Confirm Password", type="password", key="signup_confirm")
+
+            if st.button("Create Account →", use_container_width=True, key="do_signup"):
+                if not email or not password:
+                    st.error("Please fill all fields!")
+                elif password != confirm:
+                    st.error("Passwords do not match!")
+                elif len(password) < 6:
+                    st.error("Password must be at least 6 characters!")
+                else:
+                    with st.spinner("Creating account..."):
+                        user, error = sign_up(email, password)
+                    if user:
+                        st.session_state.user = user
+                        st.success("✅ Account created! Welcome to Smriti!")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {error}")
+
+    st.stop()  # Stop here if not logged in
+
+# ── USER IS LOGGED IN ─────────────────────────────────────
+user_id = st.session_state.user.id
+
+# Mark today studied + streak XP
+mark_today_studied(user_id=user_id)
 if "streak_xp_given" not in st.session_state:
-    add_xp("streak_daily", "Daily streak bonus")
+    add_xp("streak_daily", "Daily streak bonus", user_id=user_id)
     st.session_state.streak_xp_given = True
 
 # ── SESSION STATE ─────────────────────────────────────────
@@ -453,17 +535,21 @@ if "page" not in st.session_state:
     st.session_state.page = "Home"
 
 # ── TOP NAVIGATION ────────────────────────────────────────
-st.markdown("""
+user_email = st.session_state.user.email
+st.markdown(f"""
 <div class='nav-wrapper'>
     <div class='nav-brand'>
         🧠 <span>Smriti</span>
         <span class='nav-tagline'>Memory Intelligence</span>
     </div>
+    <div style='color:rgba(255,255,255,0.4);font-size:11px;'>
+        {user_email}
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
 # Nav buttons
-c1, c2, c3, c4, c5, c6, c7 = st.columns([1.5, 1, 1, 1, 1, 1, 1])
+c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([1.2, 1, 1, 1, 1, 1, 1, 0.8])
 with c1:
     st.markdown("")
 with c2:
@@ -478,12 +564,19 @@ with c6:
     if st.button("🧪 Quiz",        use_container_width=True, key="nav_quiz"):   st.session_state.page = "Quiz"
 with c7:
     if st.button("🏆 Leaderboard", use_container_width=True, key="nav_leader"): st.session_state.page = "Leaderboard"
+with c8:
+    if st.button("🚪 Logout",      use_container_width=True, key="nav_logout"):
+        sign_out()
+        st.session_state.user = None
+        st.session_state.clear()
+        st.rerun()
+    if st.button("🏆 Leaderboard", use_container_width=True, key="nav_leader"): st.session_state.page = "Leaderboard"
 
 page = st.session_state.page
 
 # ── HELPER ────────────────────────────────────────────────
 def load_topics():
-    raw = get_all_topics()
+    raw = get_all_topics(user_id=user_id)
     return [{
         "id": r[0], "topic_name": r[1], "subject": r[2],
         "understanding_score": r[3], "date_learned": r[4],
@@ -517,8 +610,8 @@ if page == "Home":
     topics = load_topics()
 
     # ── IMPROVEMENT 1: STREAK CARD ────────────────────────
-    streak      = get_streak()
-    total_days  = get_total_study_days()
+    streak      = get_streak(user_id=user_id)
+    total_days  = get_total_study_days(user_id=user_id)
 
     # Streak emoji based on count
     if streak >= 30:   fire = "🔥🔥🔥"
@@ -787,8 +880,8 @@ elif page == "Add Topic":
             if not topic_name.strip():
                 st.error("Please enter a topic name!")
             else:
-                add_topic(topic_name.strip(), subject, understanding_score, str(date_learned))
-                xp_earned = add_xp("add_topic", topic_name.strip())
+                add_topic(topic_name.strip(), subject, understanding_score, str(date_learned), user_id=user_id)
+                xp_earned = add_xp("add_topic", topic_name.strip(), user_id=user_id)
                 st.success(f"✅ **'{topic_name}'** added! +{xp_earned} XP 🌟")
                 st.balloons()
 
@@ -1037,8 +1130,8 @@ elif page == "Review List":
                     key=f"slider_{topic['id']}"
                 )
                 if st.button("✅ Mark as Reviewed", key=f"btn_{topic['id']}"):
-                    add_review(topic["id"], review_score * 10)
-                    xp = add_xp("review_topic", topic["topic_name"])
+                    add_review(topic["id"], review_score * 10, user_id=user_id)
+                    xp = add_xp("review_topic", topic["topic_name"], user_id=user_id)
                     st.success(f"✅ Reviewed! +{xp} XP earned 🌟")
                     st.rerun()
 
@@ -1287,14 +1380,14 @@ elif page == "Quiz":
 
             # Update retention
             boost = quiz_to_retention_boost(score, st.session_state.selected_bloom)
-            add_review(selected["id"], boost * 10)
+            add_review(selected["id"], boost * 10, user_id=user_id)
 
             # Add XP for quiz completion
             quiz_activity = f"quiz_l{st.session_state.selected_bloom}"
-            xp_earned     = add_xp(quiz_activity, selected["topic_name"])
+            xp_earned     = add_xp(quiz_activity, selected["topic_name"], user_id=user_id)
             # Bonus XP for perfect score
             if score == 100:
-                bonus_xp  = add_xp("quiz_100_bonus", "Perfect score!")
+                bonus_xp  = add_xp("quiz_100_bonus", "Perfect score!", user_id=user_id)
                 xp_earned += bonus_xp
                 st.success(f"✅ Retention updated! +{xp_earned} XP earned (including perfect score bonus!) 🌟")
             else:
@@ -1379,11 +1472,11 @@ elif page == "Leaderboard":
     """, unsafe_allow_html=True)
 
     topics     = load_topics()
-    total_xp   = get_total_xp()
-    today_xp   = get_today_xp()
+    total_xp   = get_total_xp(user_id=user_id)
+    today_xp   = get_today_xp(user_id=user_id)
     league     = get_league(total_xp)
-    streak     = get_streak()
-    xp_history = get_xp_history(7)
+    streak     = get_streak(user_id=user_id)
+    xp_history = get_xp_history(7, user_id=user_id)
 
     _, league_name, league_color = league
 
@@ -1502,7 +1595,7 @@ elif page == "Leaderboard":
         st.info("Add some topics to see subject rankings!")
     else:
         priority    = get_review_priority(topics)
-        subject_xp  = get_xp_by_subject(topics)
+        subject_xp  = get_xp_by_subject(topics, user_id=user_id)
 
         # Build subject stats
         subject_stats = {}

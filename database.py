@@ -1,7 +1,6 @@
 """
 Smriti — Database Layer
-Uses Supabase (PostgreSQL) for cloud persistence
-Falls back to SQLite for local development
+Uses Supabase (PostgreSQL) with user authentication
 """
 
 import os
@@ -16,10 +15,22 @@ load_dotenv(dotenv_path=Path.cwd() / ".env")
 
 # ── SUPABASE CLIENT ───────────────────────────────────────
 def get_supabase():
+    # Try Streamlit secrets first (cloud deployment)
+    try:
+        import streamlit as st
+        url = st.secrets.get("SUPABASE_URL")
+        key = st.secrets.get("SUPABASE_KEY")
+        if url and key:
+            from supabase import create_client
+            return create_client(url, key)
+    except Exception:
+        pass
+
+    # Try environment variables
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_KEY")
 
-    # Also try reading directly from .env file
+    # Try reading directly from .env file
     if not url or not key:
         for env_path in [Path(__file__).parent / ".env", Path.cwd() / ".env"]:
             if env_path.exists():
@@ -32,23 +43,50 @@ def get_supabase():
                             key = line.split("=", 1)[1].strip()
 
     if not url or not key:
-        raise ValueError("SUPABASE_URL or SUPABASE_KEY not found in .env!")
+        raise ValueError("SUPABASE_URL or SUPABASE_KEY not found!")
 
     from supabase import create_client
     return create_client(url, key)
 
-# ── INIT DB — Just verify connection ─────────────────────
+# ── AUTH FUNCTIONS ────────────────────────────────────────
+def sign_up(email, password):
+    try:
+        sb  = get_supabase()
+        res = sb.auth.sign_up({"email": email, "password": password})
+        if res.user:
+            return res.user, None
+        return None, "Signup failed"
+    except Exception as e:
+        return None, str(e)
+
+def sign_in(email, password):
+    try:
+        sb  = get_supabase()
+        res = sb.auth.sign_in_with_password({"email": email, "password": password})
+        if res.user:
+            return res.user, None
+        return None, "Invalid email or password"
+    except Exception as e:
+        return None, "Invalid email or password"
+
+def sign_out():
+    try:
+        sb = get_supabase()
+        sb.auth.sign_out()
+    except Exception:
+        pass
+
+# ── INIT DB ───────────────────────────────────────────────
 def init_db():
-    """Verify Supabase connection"""
     try:
         sb = get_supabase()
         sb.table("topics").select("id").limit(1).execute()
-        print("✅ Supabase connected!")
     except Exception as e:
-        print(f"⚠️ Supabase connection issue: {e}")
+        print(f"Supabase: {e}")
 
 # ── TOPICS ────────────────────────────────────────────────
-def add_topic(topic_name, subject, understanding_score, date_learned=None):
+def add_topic(topic_name, subject, understanding_score,
+              date_learned=None, user_id=None):
     if date_learned is None:
         date_learned = datetime.now().strftime("%Y-%m-%d")
     sb = get_supabase()
@@ -58,42 +96,35 @@ def add_topic(topic_name, subject, understanding_score, date_learned=None):
         "understanding_score": understanding_score,
         "date_learned":        str(date_learned),
         "review_count":        0,
+        "user_id":             user_id,
     }).execute()
 
-def get_all_topics():
-    sb   = get_supabase()
-    res  = sb.table("topics").select("*").order("date_learned", desc=True).execute()
-    rows = res.data
-    # Convert to tuple format matching old SQLite format
+def get_all_topics(user_id=None):
+    sb = get_supabase()
+    q  = sb.table("topics").select("*").order("date_learned", desc=True)
+    if user_id:
+        q = q.eq("user_id", user_id)
+    res = q.execute()
     return [
         (
-            r["id"],
-            r["topic_name"],
-            r["subject"],
-            r["understanding_score"],
-            r["date_learned"],
-            r.get("last_reviewed"),
-            r.get("review_count", 0),
+            r["id"], r["topic_name"], r["subject"],
+            r["understanding_score"], r["date_learned"],
+            r.get("last_reviewed"), r.get("review_count", 0),
         )
-        for r in rows
+        for r in res.data
     ]
 
-def add_review(topic_id, retention_score):
+def add_review(topic_id, retention_score, user_id=None):
     today = datetime.now().strftime("%Y-%m-%d")
     sb    = get_supabase()
-
-    # Insert review
     sb.table("reviews").insert({
         "topic_id":        topic_id,
         "review_date":     today,
         "retention_score": retention_score,
+        "user_id":         user_id,
     }).execute()
-
-    # Get current review count
     res   = sb.table("topics").select("review_count").eq("id", topic_id).execute()
     count = res.data[0]["review_count"] if res.data else 0
-
-    # Update topic
     sb.table("topics").update({
         "last_reviewed": today,
         "review_count":  count + 1,
@@ -111,28 +142,29 @@ def delete_topic(topic_id):
 
 # ── STREAK ────────────────────────────────────────────────
 def init_streak_table():
-    """No-op for Supabase — table already created via SQL"""
     pass
 
-def mark_today_studied():
+def mark_today_studied(user_id=None):
     today = datetime.now().strftime("%Y-%m-%d")
     sb    = get_supabase()
     try:
-        sb.table("streaks").insert({"study_date": today}).execute()
+        sb.table("streaks").insert({
+            "study_date": today,
+            "user_id":    user_id,
+        }).execute()
     except Exception:
-        pass  # Already exists — unique constraint
+        pass
 
-def get_streak():
-    sb    = get_supabase()
-    res   = sb.table("streaks").select("study_date").order("study_date", desc=True).execute()
-    dates = [r["study_date"] for r in res.data]
-
+def get_streak(user_id=None):
+    sb = get_supabase()
+    q  = sb.table("streaks").select("study_date").order("study_date", desc=True)
+    if user_id:
+        q = q.eq("user_id", user_id)
+    dates = [r["study_date"] for r in q.execute().data]
     if not dates:
         return 0
-
     streak = 0
     check  = date.today()
-
     for d in dates:
         day = date.fromisoformat(d)
         if day == check or day == check - timedelta(days=1):
@@ -140,13 +172,14 @@ def get_streak():
             check   = day - timedelta(days=1)
         else:
             break
-
     return streak
 
-def get_total_study_days():
-    sb  = get_supabase()
-    res = sb.table("streaks").select("id", count="exact").execute()
-    return res.count or 0
+def get_total_study_days(user_id=None):
+    sb = get_supabase()
+    q  = sb.table("streaks").select("id", count="exact")
+    if user_id:
+        q = q.eq("user_id", user_id)
+    return q.execute().count or 0
 
 # ── XP SYSTEM ─────────────────────────────────────────────
 XP_REWARDS = {
@@ -171,10 +204,9 @@ LEAGUE_THRESHOLDS = [
 ]
 
 def init_xp_table():
-    """No-op for Supabase — table already created via SQL"""
     pass
 
-def add_xp(activity, note=""):
+def add_xp(activity, note="", user_id=None):
     xp = XP_REWARDS.get(activity, 0)
     if xp == 0:
         return 0
@@ -185,28 +217,37 @@ def add_xp(activity, note=""):
         "xp_earned":   xp,
         "earned_date": today,
         "note":        note,
+        "user_id":     user_id,
     }).execute()
     return xp
 
-def get_total_xp():
-    sb  = get_supabase()
-    res = sb.table("xp_log").select("xp_earned").execute()
+def get_total_xp(user_id=None):
+    sb = get_supabase()
+    q  = sb.table("xp_log").select("xp_earned")
+    if user_id:
+        q = q.eq("user_id", user_id)
+    res = q.execute()
     return sum(r["xp_earned"] for r in res.data) if res.data else 0
 
-def get_today_xp():
+def get_today_xp(user_id=None):
     today = datetime.now().strftime("%Y-%m-%d")
     sb    = get_supabase()
-    res   = sb.table("xp_log").select("xp_earned").eq("earned_date", today).execute()
+    q     = sb.table("xp_log").select("xp_earned").eq("earned_date", today)
+    if user_id:
+        q = q.eq("user_id", user_id)
+    res = q.execute()
     return sum(r["xp_earned"] for r in res.data) if res.data else 0
 
-def get_xp_by_subject(topics):
+def get_xp_by_subject(topics, user_id=None):
     sb         = get_supabase()
     subject_xp = {}
     for topic in topics:
         subj      = topic["subject"]
         base      = XP_REWARDS["add_topic"]
-        res       = sb.table("reviews").select("id", count="exact").eq("topic_id", topic["id"]).execute()
-        reviews   = res.count or 0
+        q         = sb.table("reviews").select("id", count="exact").eq("topic_id", topic["id"])
+        if user_id:
+            q = q.eq("user_id", user_id)
+        reviews   = q.execute().count or 0
         review_xp = reviews * XP_REWARDS["review_topic"]
         subject_xp[subj] = subject_xp.get(subj, 0) + base + review_xp
     return subject_xp
@@ -218,16 +259,14 @@ def get_league(total_xp):
             league = (threshold, name, color)
     return league
 
-def get_xp_history(days=7):
-    sb  = get_supabase()
-    res = sb.table("xp_log").select("earned_date, xp_earned").order("earned_date", desc=True).execute()
-
-    # Group by date manually
+def get_xp_history(days=7, user_id=None):
+    sb = get_supabase()
+    q  = sb.table("xp_log").select("earned_date, xp_earned").order("earned_date", desc=True)
+    if user_id:
+        q = q.eq("user_id", user_id)
+    res = q.execute()
     from collections import defaultdict
     daily = defaultdict(int)
     for r in res.data:
         daily[r["earned_date"]] += r["xp_earned"]
-
-    # Sort and limit
-    sorted_days = sorted(daily.items(), reverse=True)[:days]
-    return [(d, xp) for d, xp in sorted_days]
+    return sorted(daily.items(), reverse=True)[:days]
