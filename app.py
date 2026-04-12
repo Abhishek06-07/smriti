@@ -443,43 +443,357 @@ init_db()
 init_streak_table()
 init_xp_table()
 
-# ── AUTH GATE ─────────────────────────────────────────────
-if "user" not in st.session_state:
-    st.session_state.user    = None
-if "auth_mode" not in st.session_state:
-    st.session_state.auth_mode = "login"
+# ── SESSION STATE ─────────────────────────────────────────
+if "user"      not in st.session_state: st.session_state.user      = None
+if "auth_mode" not in st.session_state: st.session_state.auth_mode = "landing"
 
-# ── LOGIN / SIGNUP PAGE ───────────────────────────────────
-if not st.session_state.user:
+# ════════════════════════════════════════════════════════
+# LANDING PAGE
+# ════════════════════════════════════════════════════════
+def create_landing_page():
     st.markdown("""
-    <div style='max-width:420px;margin:60px auto;'>
-        <div style='text-align:center;margin-bottom:32px;'>
-            <div style='font-size:3.5rem;'>🧠</div>
-            <div style='font-family:Georgia,serif;font-size:2rem;
-                        font-weight:700;color:#0F1B2D;'>Smriti</div>
-            <div style='color:#64748B;font-size:0.9rem;margin-top:4px;'>
-                AI-Powered Memory Intelligence
+    <style>
+    /* Landing page styles */
+    .landing-hero {
+        background: linear-gradient(135deg, #0F1B2D 0%, #1E3A5F 60%, #0F1B2D 100%);
+        padding: 80px 40px 60px;
+        margin: -1rem -1rem 0 -1rem;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+    .landing-hero::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(201,168,76,0.06) 0%, transparent 60%);
+        animation: pulse-bg 4s ease-in-out infinite;
+    }
+    @keyframes pulse-bg {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+    }
+    .hero-badge {
+        display: inline-block;
+        background: rgba(201,168,76,0.15);
+        border: 1px solid rgba(201,168,76,0.4);
+        color: #C9A84C;
+        padding: 6px 18px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        margin-bottom: 24px;
+    }
+    .hero-title {
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 4.5rem;
+        font-weight: 700;
+        color: #FFFFFF;
+        line-height: 1.1;
+        margin-bottom: 16px;
+    }
+    .hero-title span { color: #C9A84C; }
+    .hero-tagline {
+        font-size: 1.25rem;
+        color: rgba(255,255,255,0.6);
+        max-width: 560px;
+        margin: 0 auto 40px;
+        line-height: 1.6;
+    }
+    .hero-stats {
+        display: flex;
+        justify-content: center;
+        gap: 48px;
+        margin-top: 48px;
+        padding-top: 40px;
+        border-top: 1px solid rgba(255,255,255,0.08);
+        flex-wrap: wrap;
+    }
+    .hero-stat-num {
+        font-family: Georgia, serif;
+        font-size: 2rem;
+        font-weight: 700;
+        color: #C9A84C;
+    }
+    .hero-stat-label {
+        font-size: 11px;
+        color: rgba(255,255,255,0.4);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-top: 4px;
+    }
+    .feature-card {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 16px;
+        padding: 28px 24px;
+        height: 100%;
+        box-shadow: 0 2px 12px rgba(15,27,45,0.06);
+        transition: transform 0.2s, box-shadow 0.2s;
+        border-top: 3px solid;
+    }
+    .feature-icon { font-size: 2.2rem; margin-bottom: 14px; }
+    .feature-title {
+        font-family: Georgia, serif;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #0F1B2D;
+        margin-bottom: 10px;
+    }
+    .feature-desc {
+        font-size: 0.88rem;
+        color: #64748B;
+        line-height: 1.6;
+    }
+    .how-step {
+        display: flex;
+        align-items: flex-start;
+        gap: 20px;
+        margin-bottom: 28px;
+    }
+    .how-step-num {
+        min-width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1rem;
+        font-family: Georgia, serif;
+        flex-shrink: 0;
+    }
+    .cta-section {
+        background: linear-gradient(135deg, #0F1B2D, #1E3A5F);
+        border-radius: 20px;
+        padding: 56px 40px;
+        text-align: center;
+        margin: 40px 0;
+    }
+    .footer {
+        text-align: center;
+        padding: 32px;
+        color: #94A3B8;
+        font-size: 13px;
+        border-top: 1px solid #E2E8F0;
+        margin-top: 40px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── HERO ─────────────────────────────────────────────
+    st.markdown("""
+    <div class='landing-hero'>
+        <div class='hero-badge'>🧠 AI-Powered Memory Science</div>
+        <div class='hero-title'>Never Forget<br>What You <span>Learn</span></div>
+        <div class='hero-tagline'>
+            Smriti uses Machine Learning to predict exactly when you'll forget —
+            and reminds you to review before it happens.
+        </div>
+        <div class='hero-stats'>
+            <div>
+                <div class='hero-stat-num'>95.4%</div>
+                <div class='hero-stat-label'>Model Accuracy</div>
+            </div>
+            <div>
+                <div class='hero-stat-num'>13M+</div>
+                <div class='hero-stat-label'>Training Records</div>
+            </div>
+            <div>
+                <div class='hero-stat-num'>6</div>
+                <div class='hero-stat-label'>Bloom's Levels</div>
+            </div>
+            <div>
+                <div class='hero-stat-num'>100%</div>
+                <div class='hero-stat-label'>Free to Use</div>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Center the form
-    _, col, _ = st.columns([1, 2, 1])
+    # ── CTA BUTTONS ──────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([2, 1, 2])
+    with c2:
+        if st.button("🚀 Get Started — Free", use_container_width=True, key="hero_cta"):
+            st.session_state.auth_mode = "signup"
+            st.rerun()
+
+    c1, c2, c3 = st.columns([2.5, 1, 2.5])
+    with c2:
+        if st.button("🔑 Login", use_container_width=True, key="hero_login"):
+            st.session_state.auth_mode = "login"
+            st.rerun()
+
+    # ── FEATURES ─────────────────────────────────────────
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style='text-align:center;margin-bottom:32px;'>
+        <div style='font-size:12px;color:#C9A84C;text-transform:uppercase;
+                    letter-spacing:0.12em;font-weight:600;margin-bottom:8px;'>
+            Why Smriti?
+        </div>
+        <div style='font-family:Georgia,serif;font-size:2rem;
+                    font-weight:700;color:#0F1B2D;'>
+            Built on Real Science
+        </div>
+        <div style='color:#64748B;font-size:0.95rem;margin-top:8px;'>
+            Inspired by Duolingo's Half-Life Regression — adapted for academic learning
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    features = [
+        {
+            "icon": "📉",
+            "title": "Personal Forgetting Curve",
+            "desc": "ML model trained on 13M+ Duolingo records predicts YOUR retention — not a generic curve. R² = 0.9539.",
+            "color": "#6366F1",
+        },
+        {
+            "icon": "🔴",
+            "title": "Weak Topic Detection",
+            "desc": "Decision Tree classifier automatically flags topics as Strong, At-Risk, or Weak — before you forget.",
+            "color": "#DC2626",
+        },
+        {
+            "icon": "🧪",
+            "title": "Bloom's Taxonomy Quiz",
+            "desc": "AI-generated questions across 6 cognitive levels — from basic recall to creative problem solving.",
+            "color": "#059669",
+        },
+        {
+            "icon": "🏆",
+            "title": "XP & Leaderboard",
+            "desc": "Earn XP for every study activity. Climb from Bronze to Legend league — stay motivated every day.",
+            "color": "#D97706",
+        },
+    ]
+
+    cols = st.columns(4)
+    for i, f in enumerate(features):
+        with cols[i]:
+            st.markdown(f"""
+            <div class='feature-card' style='border-top-color:{f["color"]};'>
+                <div class='feature-icon'>{f["icon"]}</div>
+                <div class='feature-title'>{f["title"]}</div>
+                <div class='feature-desc'>{f["desc"]}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # ── HOW IT WORKS ─────────────────────────────────────
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style='text-align:center;margin-bottom:32px;'>
+        <div style='font-size:12px;color:#C9A84C;text-transform:uppercase;
+                    letter-spacing:0.12em;font-weight:600;margin-bottom:8px;'>
+            How It Works
+        </div>
+        <div style='font-family:Georgia,serif;font-size:2rem;
+                    font-weight:700;color:#0F1B2D;'>
+            4 Simple Steps
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    steps = [
+        ("#6366F1", "1", "📖 Add Topic",       "Enter topic name, subject & understanding score (1–10). Pick date you studied it."),
+        ("#059669", "2", "🧠 ML Calculates",   "Our model computes your personal forgetting curve — powered by Duolingo's dataset."),
+        ("#D97706", "3", "📊 See Your Curve",  "Dashboard shows retention % over 30 days. Red zone = review urgently!"),
+        ("#DC2626", "4", "✅ Quiz & Update",    "Take Bloom's Taxonomy quiz → score updates your curve → memory gets stronger!"),
+    ]
+
+    col_l, col_r = st.columns(2)
+    for i, (color, num, title, desc) in enumerate(steps):
+        col = col_l if i % 2 == 0 else col_r
+        with col:
+            st.markdown(f"""
+            <div class='how-step'>
+                <div class='how-step-num'
+                     style='background:{color}18;color:{color};border:2px solid {color};'>
+                    {num}
+                </div>
+                <div>
+                    <div style='font-weight:700;color:#0F1B2D;font-size:0.95rem;
+                                margin-bottom:4px;'>{title}</div>
+                    <div style='color:#64748B;font-size:0.85rem;line-height:1.5;'>
+                        {desc}
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # ── CTA SECTION ──────────────────────────────────────
+    st.markdown("""
+    <div class='cta-section'>
+        <div style='font-size:12px;color:#C9A84C;text-transform:uppercase;
+                    letter-spacing:0.12em;font-weight:600;margin-bottom:12px;'>
+            Start Today — It's Free
+        </div>
+        <div style='font-family:Georgia,serif;font-size:2rem;font-weight:700;
+                    color:#FFFFFF;margin-bottom:12px;'>
+            Take Control of Your Memory
+        </div>
+        <div style='color:rgba(255,255,255,0.5);font-size:0.95rem;margin-bottom:32px;'>
+            Join students who study smarter — not harder.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns([2, 1, 2])
+    with c2:
+        if st.button("🚀 Start for Free", use_container_width=True, key="cta_bottom"):
+            st.session_state.auth_mode = "signup"
+            st.rerun()
+
+    # ── FOOTER ───────────────────────────────────────────
+    st.markdown("""
+    <div class='footer'>
+        🧠 <strong>Smriti</strong> — AI-Powered Forgetting Curve Predictor<br>
+        Made with ❤️ in Kanpur, Uttar Pradesh 🇮🇳<br>
+        <span style='color:#CBD5E1;'>
+            Inspired by Ebbinghaus (1885) · Duolingo Half-Life Regression · Bloom's Taxonomy
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════════════════
+# AUTH PAGE — LOGIN / SIGNUP
+# ════════════════════════════════════════════════════════
+def create_auth_page():
+    # Back button
+    if st.button("← Back to Home", key="back_home"):
+        st.session_state.auth_mode = "landing"
+        st.rerun()
+
+    st.markdown("""
+    <div style='text-align:center;margin:32px 0 24px;'>
+        <div style='font-size:2.8rem;'>🧠</div>
+        <div style='font-family:Georgia,serif;font-size:1.8rem;
+                    font-weight:700;color:#0F1B2D;'>Smriti</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _, col, _ = st.columns([1, 1.5, 1])
     with col:
-        # Toggle Login / Signup
-        mode_col1, mode_col2 = st.columns(2)
-        with mode_col1:
-            if st.button("🔑 Login", use_container_width=True, key="mode_login"):
+        mode_c1, mode_c2 = st.columns(2)
+        with mode_c1:
+            if st.button("🔑 Login",    use_container_width=True, key="tab_login"):
                 st.session_state.auth_mode = "login"
-        with mode_col2:
-            if st.button("📝 Sign Up", use_container_width=True, key="mode_signup"):
+        with mode_c2:
+            if st.button("📝 Sign Up",  use_container_width=True, key="tab_signup"):
                 st.session_state.auth_mode = "signup"
 
         st.markdown("---")
 
         if st.session_state.auth_mode == "login":
-            st.markdown("#### Welcome back!")
+            st.markdown("#### 👋 Welcome back!")
             email    = st.text_input("Email", placeholder="you@example.com", key="login_email")
             password = st.text_input("Password", type="password", key="login_pass")
 
@@ -490,14 +804,17 @@ if not st.session_state.user:
                     with st.spinner("Logging in..."):
                         user, error = sign_in(email, password)
                     if user:
-                        st.session_state.user = user
-                        st.success("✅ Welcome back!")
+                        st.session_state.user      = user
+                        st.session_state.auth_mode = "landing"
                         st.rerun()
                     else:
                         st.error(f"❌ {error}")
 
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.caption("No account? Click **Sign Up** above!")
+
         else:
-            st.markdown("#### Create Account")
+            st.markdown("#### 🚀 Create Account")
             email    = st.text_input("Email", placeholder="you@example.com", key="signup_email")
             password = st.text_input("Password (min 6 chars)", type="password", key="signup_pass")
             confirm  = st.text_input("Confirm Password", type="password", key="signup_confirm")
@@ -513,13 +830,23 @@ if not st.session_state.user:
                     with st.spinner("Creating account..."):
                         user, error = sign_up(email, password)
                     if user:
-                        st.session_state.user = user
-                        st.success("✅ Account created! Welcome to Smriti!")
+                        st.session_state.user      = user
+                        st.session_state.auth_mode = "landing"
                         st.rerun()
                     else:
                         st.error(f"❌ {error}")
 
-    st.stop()  # Stop here if not logged in
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.caption("Already have an account? Click **Login** above!")
+
+
+# ── ROUTE ─────────────────────────────────────────────────
+if not st.session_state.user:
+    if st.session_state.auth_mode == "landing":
+        create_landing_page()
+    else:
+        create_auth_page()
+    st.stop()
 
 # ── USER IS LOGGED IN ─────────────────────────────────────
 user_id = st.session_state.user.id
