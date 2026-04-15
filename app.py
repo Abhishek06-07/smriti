@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+from datetime import datetime
 from database import (
     init_db, add_topic, get_all_topics, add_review,
     init_streak_table, mark_today_studied,
@@ -9,7 +10,7 @@ from database import (
     init_xp_table, add_xp, get_total_xp,
     get_today_xp, get_xp_by_subject,
     get_league, get_xp_history, LEAGUE_THRESHOLDS,
-    sign_up, sign_in, sign_out
+    sign_up, sign_in, sign_out, get_supabase
 )
 from model import (
     get_retention_curve, current_retention,
@@ -24,35 +25,21 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ── MIDNIGHT NAVY PROFESSIONAL THEME ─────────────────────
-# Psychology:
-#   Navy   #0F1B2D = authority, depth, premium
-#   Steel  #1E3A5F = trust, intelligence
-#   Gold   #C9A84C = achievement, excellence
-#   Slate  #F1F4F8 = clean content bg, readable
-#   White  #FFFFFF = pure content area
-#   Red    #DC2626 = urgent/danger
-#   Amber  #D97706 = at-risk/warning
-#   Green  #059669 = strong/success
-
+# ── INJECT STYLES ────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@300;400;500;600&display=swap');
 
 /* ── GLOBAL ── */
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif !important;
-}
-#MainMenu, footer, header { visibility: hidden; }
-section[data-testid="stSidebar"] { display: none !important; }
+html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
+#MainMenu, footer, header   { visibility: hidden; }
+section[data-testid="stSidebar"]  { display: none !important; }
 [data-testid="collapsedControl"]  { display: none !important; }
 
-/* ── APP BACKGROUND — light slate ── */
-.stApp {
-    background-color: #F1F4F8 !important;
-}
+/* ── APP BACKGROUND ── */
+.stApp { background-color: #F1F4F8 !important; }
 
-/* ── TOP NAV BAR ── */
+/* ── NAV BAR ── */
 .nav-wrapper {
     background: linear-gradient(135deg, #0F1B2D 0%, #1E3A5F 100%);
     padding: 0 32px;
@@ -71,14 +58,11 @@ section[data-testid="stSidebar"] { display: none !important; }
     font-size: 1.35rem;
     font-weight: 700;
     color: #FFFFFF;
-    letter-spacing: -0.01em;
     display: flex;
     align-items: center;
     gap: 8px;
 }
-.nav-brand span {
-    color: #C9A84C;
-}
+.nav-brand span { color: #C9A84C; }
 .nav-tagline {
     font-size: 10px;
     color: rgba(255,255,255,0.4);
@@ -87,7 +71,7 @@ section[data-testid="stSidebar"] { display: none !important; }
     margin-left: 4px;
 }
 
-/* ── PAGE TITLE AREA ── */
+/* ── PAGE HEADER ── */
 .page-header {
     background: linear-gradient(135deg, #0F1B2D 0%, #1E3A5F 100%);
     margin: 0 -1rem 2rem -1rem;
@@ -105,17 +89,6 @@ section[data-testid="stSidebar"] { display: none !important; }
     font-size: 0.875rem;
     color: rgba(255,255,255,0.5);
     margin: 0;
-    letter-spacing: 0.03em;
-}
-
-/* ── CONTENT CARD ── */
-.content-card {
-    background: #FFFFFF;
-    border-radius: 12px;
-    border: 1px solid #E2E8F0;
-    padding: 24px;
-    margin-bottom: 20px;
-    box-shadow: 0 1px 6px rgba(15,27,45,0.06);
 }
 
 /* ── METRIC CARDS ── */
@@ -139,7 +112,6 @@ section[data-testid="stSidebar"] { display: none !important; }
     letter-spacing: 0.1em !important;
     font-weight: 500 !important;
 }
-[data-testid="stMetricDelta"] { font-size: 0.8rem !important; }
 
 /* ── BUTTONS ── */
 .stButton > button {
@@ -158,11 +130,8 @@ section[data-testid="stSidebar"] { display: none !important; }
     background: #2D5A8E !important;
     transform: translateY(-1px) !important;
 }
-/* Button text always white */
-.stButton > button p,
-.stButton > button span {
-    color: #FFFFFF !important;
-}
+.stButton > button p, .stButton > button span { color: #FFFFFF !important; }
+
 [data-testid="stFormSubmitButton"] > button {
     background: linear-gradient(135deg, #0F1B2D, #1E3A5F) !important;
     color: #FFFFFF !important;
@@ -172,23 +141,20 @@ section[data-testid="stSidebar"] { display: none !important; }
     font-size: 0.9rem !important;
     padding: 12px 24px !important;
 }
-[data-testid="stFormSubmitButton"] > button:hover {
-    opacity: 0.9 !important;
-}
 
-/* ── FORM INPUTS ── */
-.stTextInput > div > div > input {
+/* ── INPUTS ── */
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea {
     background: #FFFFFF !important;
     border: 1.5px solid #CBD5E1 !important;
     border-radius: 8px !important;
     color: #0F1B2D !important;
-    font-size: 0.9rem !important;
+    font-family: 'Inter', sans-serif !important;
 }
 .stTextInput > div > div > input:focus {
     border-color: #1E3A5F !important;
+    box-shadow: 0 0 0 3px rgba(30,58,95,0.1) !important;
 }
-
-/* ── SELECTBOX ── */
 div[data-baseweb="select"] > div {
     background: #FFFFFF !important;
     border: 1.5px solid #CBD5E1 !important;
@@ -196,41 +162,9 @@ div[data-baseweb="select"] > div {
     color: #0F1B2D !important;
 }
 div[data-baseweb="select"] span,
-div[data-baseweb="select"] div {
-    color: #0F1B2D !important;
-}
-/* Dropdown options */
-ul[data-testid="stSelectboxVirtualDropdown"] li {
-    color: #0F1B2D !important;
-    background: #FFFFFF !important;
-}
-li[role="option"] {
-    color: #0F1B2D !important;
-    background: #FFFFFF !important;
-}
-li[role="option"]:hover {
-    background: #F1F4F8 !important;
-}
-    color: #0F1B2D !important;
-    font-family: 'Inter', sans-serif !important;
-    font-size: 0.9rem !important;
-}
-.stTextInput > div > div > input:focus {
-    border-color: #1E3A5F !important;
-    box-shadow: 0 0 0 3px rgba(30,58,95,0.1) !important;
-}
-.stTextArea > div > div > textarea {
-    background: #FFFFFF !important;
-    border: 1.5px solid #CBD5E1 !important;
-    border-radius: 8px !important;
-    color: #0F1B2D !important;
-}
-div[data-baseweb="select"] > div {
-    background: #FFFFFF !important;
-    border: 1.5px solid #CBD5E1 !important;
-    border-radius: 8px !important;
-    color: #0F1B2D !important;
-}
+div[data-baseweb="select"] div { color: #0F1B2D !important; }
+li[role="option"] { color: #0F1B2D !important; background: #FFFFFF !important; }
+li[role="option"]:hover { background: #F1F4F8 !important; }
 
 /* ── EXPANDER ── */
 details {
@@ -244,7 +178,6 @@ details summary {
     color: #0F1B2D !important;
     font-weight: 500 !important;
     padding: 14px 18px !important;
-    font-family: 'Inter', sans-serif !important;
 }
 
 /* ── PROGRESS BAR ── */
@@ -257,69 +190,27 @@ details summary {
     border-radius: 999px !important;
 }
 
-/* ── ALERTS ── */
+/* ── TEXT ── */
+.stMarkdown p       { color: #0F1B2D !important; }
+.stMarkdown strong  { color: #0F1B2D !important; font-weight: 700 !important; }
+[data-testid="stRadio"] label p { color: #0F1B2D !important; }
+.stRadio label      { color: #0F1B2D !important; }
+p                   { color: #0F1B2D !important; }
+label               { color: #374151 !important; font-weight: 500 !important; }
+h1, h2, h3          { font-family: 'Playfair Display', serif !important; color: #0F1B2D !important; }
+[data-testid="stMarkdownContainer"] p { color: #0F1B2D !important; }
+
+/* ── MISC ── */
+hr { border-color: #E2E8F0 !important; }
 .stAlert { border-radius: 10px !important; border-left-width: 4px !important; }
 
-/* ── DIVIDER ── */
-hr { border-color: #E2E8F0 !important; }
-
-/* ── SELECTBOX LABEL ── */
-label { color: #374151 !important; font-weight: 500 !important; }
-
-/* ── HEADINGS ── */
-h1, h2, h3 {
-    font-family: 'Playfair Display', serif !important;
-    color: #0F1B2D !important;
-}
-
-/* ── QUIZ TEXT FIX ── */
-/* Question text */
-.stMarkdown p { color: #0F1B2D !important; font-size: 0.95rem !important; }
-.stMarkdown strong { color: #0F1B2D !important; font-weight: 700 !important; }
-
-/* Radio button labels — options text */
-.stRadio label {
-    color: #0F1B2D !important;
-    font-size: 0.9rem !important;
-    font-weight: 400 !important;
-}
-.stRadio > div > label {
-    color: #0F1B2D !important;
-}
-/* Radio option text */
-[data-testid="stRadio"] label p {
-    color: #0F1B2D !important;
-    font-size: 0.9rem !important;
-}
-/* All paragraph text */
-p { color: #0F1B2D !important; }
-
-/* Caption text */
-.stCaption p {
-    color: #64748B !important;
-    font-size: 0.8rem !important;
-}
-
-/* General text color */
-[data-testid="stMarkdownContainer"] p {
-    color: #0F1B2D !important;
-}
-[data-testid="stMarkdownContainer"] {
-    color: #0F1B2D !important;
-}
-
-/* ── GOLD ACCENT LINE ── */
+/* ── GOLD LINE ── */
 .gold-line {
     height: 3px;
     background: linear-gradient(90deg, #C9A84C, #E8C96D, #C9A84C);
     border-radius: 2px;
     margin: 16px 0 24px 0;
 }
-
-/* ── STATUS BADGE ── */
-.badge-strong { background:#DCFCE7; color:#166534; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600; }
-.badge-risk   { background:#FEF3C7; color:#92400E; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600; }
-.badge-weak   { background:#FEE2E2; color:#991B1B; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600; }
 
 /* ── STREAK CARD ── */
 .streak-card {
@@ -334,32 +225,13 @@ p { color: #0F1B2D !important; }
     flex-wrap: wrap;
     gap: 16px;
 }
-.streak-fire {
-    font-size: 3rem;
-    line-height: 1;
-    filter: drop-shadow(0 0 12px rgba(245,158,11,0.6));
-}
-.streak-number {
-    font-size: 3rem;
-    font-weight: 700;
-    color: #C9A84C;
-    font-family: Georgia, serif;
-    line-height: 1;
-}
-.streak-label {
-    font-size: 11px;
-    color: rgba(255,255,255,0.5);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-top: 4px;
-}
 .streak-stat {
     text-align: center;
     padding: 0 16px;
     border-left: 1px solid rgba(255,255,255,0.1);
 }
 
-/* ── BLOOM PROGRESS NODES ── */
+/* ── BLOOM NODES ── */
 .bloom-path {
     display: flex;
     align-items: center;
@@ -370,70 +242,70 @@ p { color: #0F1B2D !important; }
     overflow-x: auto;
     padding: 8px 0;
 }
-.bloom-node {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    position: relative;
-    min-width: 80px;
-}
+.bloom-node { display: flex; flex-direction: column; align-items: center; position: relative; min-width: 80px; }
 .bloom-node-circle {
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.4rem;
-    font-weight: 700;
-    border: 3px solid;
-    transition: all 0.3s;
-    position: relative;
-    z-index: 2;
+    width: 52px; height: 52px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; font-weight: 700; border: 3px solid;
+    position: relative; z-index: 2;
 }
 .bloom-node-label {
-    font-size: 9px;
-    font-weight: 600;
-    margin-top: 6px;
-    text-align: center;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    font-size: 9px; font-weight: 600; margin-top: 6px;
+    text-align: center; text-transform: uppercase; letter-spacing: 0.06em;
 }
-.bloom-connector {
-    width: 40px;
-    height: 3px;
-    margin-top: -26px;
-    position: relative;
-    z-index: 1;
+.bloom-connector { width: 40px; height: 3px; margin-top: -26px; position: relative; z-index: 1; }
+
+/* ── MEMORY SCORE ── */
+.memory-score-card {
+    background: #FFFFFF; border-radius: 14px; padding: 20px 24px;
+    border: 1px solid #E2E8F0; box-shadow: 0 2px 8px rgba(15,27,45,0.06);
+    text-align: center;
 }
 
-/* ── MEMORY SCORE CARD ── */
-.memory-score-card {
+/* ── ONBOARDING ── */
+.ob-option-btn {
     background: #FFFFFF;
+    border: 1.5px solid #E2E8F0;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+    width: 100%;
+}
+.ob-option-btn:hover { border-color: #1E3A5F; background: #F8FAFC; }
+
+/* ── AI INSIGHT CARD ── */
+.ai-card {
+    background: linear-gradient(135deg, #0F1B2D, #1E3A5F);
     border-radius: 14px;
     padding: 20px 24px;
-    border: 1px solid #E2E8F0;
-    box-shadow: 0 2px 8px rgba(15,27,45,0.06);
-    text-align: center;
+    margin-bottom: 16px;
+    border-left: 4px solid #C9A84C;
 }
-.memory-score-title {
-    font-size: 11px;
-    color: #64748B;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    font-weight: 600;
-    margin-bottom: 8px;
+.ai-card-title { color: #C9A84C; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600; margin-bottom: 6px; }
+.ai-card-text  { color: #FFFFFF; font-size: 0.95rem; line-height: 1.6; }
+
+/* ── NEXT ACTION BANNER ── */
+.next-action {
+    background: #EEF2FF;
+    border: 1px solid #C7D2FE;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
-.memory-score-value {
-    font-size: 3.5rem;
-    font-weight: 700;
-    font-family: Georgia, serif;
-    line-height: 1;
-}
-.memory-score-label {
-    font-size: 12px;
-    color: #64748B;
-    margin-top: 6px;
+.next-action-emoji { font-size: 1.5rem; }
+.next-action-title { font-weight: 600; color: #3730A3; font-size: 0.95rem; }
+.next-action-desc  { color: #6366F1; font-size: 0.82rem; margin-top: 2px; }
+
+@keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
+    70%  { box-shadow: 0 0 0 8px rgba(99,102,241,0); }
+    100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -840,6 +712,751 @@ def create_auth_page():
             st.caption("Already have an account? Click **Login** above!")
 
 
+# ════════════════════════════════════════════════════════
+# SMART ONBOARDING — Branching + One-time + DB Save
+# ════════════════════════════════════════════════════════
+
+# ── Branching question tree ───────────────────────────
+
+# ════════════════════════════════════════════════════════
+# ONBOARDING MODULE (inline)
+# ════════════════════════════════════════════════════════
+# ── BRANCHING QUESTION TREE ───────────────────────────────
+ONBOARDING_TREE = {
+    "start": {
+        "step":     0,
+        "emoji":    "👋",
+        "title":    "Welcome to Smriti!",
+        "subtitle": "Let's personalize your experience — takes 30 seconds",
+        "color":    "#6366F1",
+        "question": "Who are you?",
+        "options": [
+            ("🏫", "School Student",           "school",       "Smart choice! Let's set up your study plan."),
+            ("🎓", "College Student",           "college",      "Great! College learning needs smart revision."),
+            ("📚", "Competitive Exam Aspirant", "competitive",  "Excellent! Let's sharpen your exam prep!"),
+        ],
+        "key":      "user_type",
+        "feedback": True,
+    },
+    "school": {
+        "step":     1,
+        "emoji":    "🏫",
+        "title":    "Which class are you in?",
+        "subtitle": "We'll match content to your syllabus",
+        "color":    "#059669",
+        "options": [
+            ("6️⃣",  "Class 6",  "school_6",  "Class 6 — great foundation year!"),
+            ("7️⃣",  "Class 7",  "school_7",  "Class 7 — building strong concepts!"),
+            ("8️⃣",  "Class 8",  "school_8",  "Class 8 — exciting new topics ahead!"),
+            ("9️⃣",  "Class 9",  "school_9",  "Class 9 — boards are coming, let's prepare!"),
+            ("🔟",  "Class 10", "school_10", "Class 10 — boards year, Smriti will help!"),
+            ("1️⃣1️⃣","Class 11","school_11", "Class 11 — new chapter, new challenges!"),
+            ("1️⃣2️⃣","Class 12","school_12", "Class 12 — final push, let's ace it!"),
+        ],
+        "key":      "user_detail",
+        "feedback": True,
+    },
+    "college": {
+        "step":     1,
+        "emoji":    "🎓",
+        "title":    "Which degree are you pursuing?",
+        "subtitle": "We'll recommend the right subjects",
+        "color":    "#D97706",
+        "options": [
+            ("💻", "B.Tech / B.E.", "college_btech", "Engineering — tough but rewarding!"),
+            ("🔬", "B.Sc",          "college_bsc",   "Science — curiosity is your superpower!"),
+            ("📊", "B.Com",         "college_bcom",  "Commerce — numbers are your friends!"),
+            ("📜", "BA",            "college_ba",    "Arts — critical thinking at its best!"),
+            ("⚕️", "MBBS / BDS",   "college_mbbs",  "Medicine — a noble and challenging path!"),
+            ("📐", "Other",         "college_other", "Every degree is a unique journey!"),
+        ],
+        "key":      "user_detail",
+        "feedback": True,
+    },
+    "competitive": {
+        "step":     1,
+        "emoji":    "📚",
+        "title":    "Which exam are you preparing for?",
+        "subtitle": "We'll focus on the right topics for you",
+        "color":    "#DC2626",
+        "options": [
+            ("🏛️", "UPSC / IAS", "comp_upsc", "UPSC — the ultimate challenge!"),
+            ("⚗️", "JEE",        "comp_jee",  "JEE — physics, math, and grit!"),
+            ("🩺", "NEET",       "comp_neet", "NEET — healing begins with learning!"),
+            ("⚙️", "GATE",       "comp_gate", "GATE — engineering mastery!"),
+            ("📋", "SSC / CGL",  "comp_ssc",  "SSC — consistent effort wins!"),
+            ("📝", "Other",      "comp_other","Every exam rewards smart preparation!"),
+        ],
+        "key":      "user_detail",
+        "feedback": True,
+    },
+}
+
+# ── SUMMARY LABELS ────────────────────────────────────────
+SUMMARY_MAP = {
+    "school_6":     ("Class 6 Student",          "🏫", "#059669"),
+    "school_7":     ("Class 7 Student",          "🏫", "#059669"),
+    "school_8":     ("Class 8 Student",          "🏫", "#059669"),
+    "school_9":     ("Class 9 Student",          "🏫", "#059669"),
+    "school_10":    ("Class 10 Student",         "🏫", "#059669"),
+    "school_11":    ("Class 11 Student",         "🏫", "#059669"),
+    "school_12":    ("Class 12 Student",         "🏫", "#059669"),
+    "college_btech":("B.Tech / B.E. Student",   "🎓", "#D97706"),
+    "college_bsc":  ("B.Sc Student",             "🎓", "#D97706"),
+    "college_bcom": ("B.Com Student",            "🎓", "#D97706"),
+    "college_ba":   ("BA Student",               "🎓", "#D97706"),
+    "college_mbbs": ("MBBS / BDS Student",       "🎓", "#D97706"),
+    "college_other":("College Student",           "🎓", "#D97706"),
+    "comp_upsc":    ("UPSC / IAS Aspirant",      "📚", "#DC2626"),
+    "comp_jee":     ("JEE Aspirant",             "📚", "#DC2626"),
+    "comp_neet":    ("NEET Aspirant",            "📚", "#DC2626"),
+    "comp_gate":    ("GATE Aspirant",            "📚", "#DC2626"),
+    "comp_ssc":     ("SSC / CGL Aspirant",       "📚", "#DC2626"),
+    "comp_other":   ("Competitive Exam Aspirant","📚", "#DC2626"),
+}
+
+# ── AI SUGGESTIONS based on profile ──────────────────────
+def get_ai_suggestion(user_detail):
+    suggestions = {
+        "school_10":    "Class 10 boards need strong concept revision. Start with Science and Math weak topics daily.",
+        "school_12":    "Class 12 is crucial! Revise each chapter within 3 days of studying using Smriti's curve.",
+        "comp_jee":     "JEE needs deep problem-solving. Use Bloom's L3-L4 Apply & Analyze quizzes for Physics and Math.",
+        "comp_neet":    "NEET is memory-heavy. Biology topics need daily revision — Smriti's forgetting curve is perfect!",
+        "comp_upsc":    "UPSC needs vast coverage. Add 5-8 topics daily from Current Affairs, History, and Polity.",
+        "college_btech":"Engineering needs application skills. Use L3 Apply quizzes for your core subjects.",
+    }
+    # Default suggestion
+    return suggestions.get(user_detail,
+        "Add your study topics daily and take quizzes to strengthen your memory retention.")
+
+# ── DATABASE FUNCTIONS ────────────────────────────────────
+def save_onboarding(user_id, user_type, user_detail):
+    try:
+        sb    = get_supabase()
+        today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sb.table("onboarding").upsert({
+            "user_id":      user_id,
+            "user_type":    user_type,
+            "user_detail":  user_detail,
+            "completed_at": today,
+        }).execute()
+        return True
+    except Exception as e:
+        print(f"Onboarding save error: {e}")
+        return False
+
+def get_onboarding(user_id):
+    try:
+        sb  = get_supabase()
+        res = sb.table("onboarding").select("*").eq("user_id", user_id).execute()
+        return res.data[0] if res.data else None
+    except Exception:
+        return None
+
+# ── MAIN ONBOARDING UI ────────────────────────────────────
+def create_onboarding(user_id):
+    # Init state
+    if "ob_node"     not in st.session_state: st.session_state.ob_node     = "start"
+    if "ob_answers"  not in st.session_state: st.session_state.ob_answers  = {}
+    if "ob_done"     not in st.session_state: st.session_state.ob_done     = False
+    if "ob_feedback" not in st.session_state: st.session_state.ob_feedback = None
+
+    # ── RESULT PAGE ───────────────────────────────────────
+    if st.session_state.ob_done:
+        detail           = st.session_state.ob_answers.get("user_detail", "")
+        summary, emoji, color = SUMMARY_MAP.get(detail, ("Student", "👤", "#6366F1"))
+        ai_tip           = get_ai_suggestion(detail)
+
+        st.markdown(f"""
+        <div style='text-align:center;padding:56px 24px 32px;'>
+            <div style='font-size:4rem;margin-bottom:16px;'>🎉</div>
+            <div style='font-size:12px;color:{color};text-transform:uppercase;
+                        letter-spacing:0.12em;font-weight:600;margin-bottom:10px;'>
+                Profile Ready!
+            </div>
+            <div style='font-family:Georgia,serif;font-size:2.2rem;font-weight:700;
+                        color:#0F1B2D;margin-bottom:8px;'>
+                You are a
+            </div>
+            <div style='font-family:Georgia,serif;font-size:2.2rem;font-weight:700;
+                        color:{color};margin-bottom:24px;'>
+                {emoji} {summary}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # AI Personalized tip
+        st.markdown(f"""
+        <div style='background:linear-gradient(135deg,#0F1B2D,#1E3A5F);
+                    border-radius:14px;padding:20px 24px;margin:0 auto 24px;
+                    max-width:560px;border-left:4px solid #C9A84C;'>
+            <div style='color:#C9A84C;font-size:10px;text-transform:uppercase;
+                        letter-spacing:0.12em;font-weight:600;margin-bottom:8px;'>
+                🤖 AI Recommendation — Just for You
+            </div>
+            <div style='color:#FFFFFF;font-size:0.95rem;line-height:1.6;'>
+                {ai_tip}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        _, col, _ = st.columns([1.5, 2, 1.5])
+        with col:
+            if st.button("🚀 Start Using Smriti!", use_container_width=True, key="ob_finish"):
+                save_onboarding(
+                    user_id,
+                    st.session_state.ob_answers.get("user_type", ""),
+                    detail
+                )
+                st.session_state.onboarding_done = True
+                st.session_state.user_summary    = summary
+                st.session_state.user_emoji      = emoji
+                st.session_state.ai_tip          = ai_tip
+                for k in ["ob_node","ob_answers","ob_done","ob_feedback"]:
+                    st.session_state.pop(k, None)
+                st.rerun()
+        return
+
+    # ── MICRO FEEDBACK ────────────────────────────────────
+    if st.session_state.ob_feedback:
+        fb = st.session_state.ob_feedback
+        st.markdown(f"""
+        <div style='text-align:center;padding:32px 24px 16px;'>
+            <div style='font-size:3rem;margin-bottom:12px;'>{fb["emoji"]}</div>
+            <div style='font-family:Georgia,serif;font-size:1.4rem;font-weight:700;
+                        color:{fb["color"]};margin-bottom:8px;'>{fb["text"]}</div>
+            <div style='color:#64748B;font-size:0.9rem;'>{fb["sub"]}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        import time
+        time.sleep(1.2)
+        st.session_state.ob_feedback = None
+        st.rerun()
+        return
+
+    # ── QUESTION PAGE ─────────────────────────────────────
+    node = ONBOARDING_TREE.get(st.session_state.ob_node)
+    if not node:
+        st.session_state.ob_done = True
+        st.rerun()
+        return
+
+    total   = 2
+    current = node["step"]
+    pct     = int((current / total) * 100)
+
+    # Progress bar
+    st.markdown(f"""
+    <div style='max-width:580px;margin:0 auto;padding:40px 16px 0;'>
+        <div style='display:flex;justify-content:space-between;margin-bottom:8px;'>
+            <span style='color:#64748B;font-size:12px;font-weight:500;'>
+                Step {current + 1} of {total}
+            </span>
+            <span style='color:{node["color"]};font-size:12px;font-weight:600;'>
+                {pct}% complete
+            </span>
+        </div>
+        <div style='background:#E2E8F0;border-radius:999px;height:8px;margin-bottom:40px;'>
+            <div style='background:{node["color"]};width:{max(5, pct)}%;
+                        height:8px;border-radius:999px;transition:width 0.4s;'></div>
+        </div>
+        <div style='text-align:center;margin-bottom:36px;'>
+            <div style='font-size:3.5rem;margin-bottom:16px;'>{node["emoji"]}</div>
+            <div style='font-family:Georgia,serif;font-size:1.8rem;font-weight:700;
+                        color:#0F1B2D;margin-bottom:8px;'>{node["title"]}</div>
+            <div style='color:#64748B;font-size:0.9rem;'>{node["subtitle"]}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Options
+    _, col, _ = st.columns([0.5, 3, 0.5])
+    with col:
+        options      = node["options"]
+        cols_per_row = 2 if len(options) > 4 else 1
+
+        if cols_per_row == 1:
+            for item in options:
+                emoji, label, next_node, feedback_msg = item
+                if st.button(
+                    f"{emoji}  {label}",
+                    use_container_width=True,
+                    key=f"ob_{node['key']}_{next_node}"
+                ):
+                    st.session_state.ob_answers[node["key"]] = next_node
+                    # Set micro-feedback
+                    st.session_state.ob_feedback = {
+                        "text":  feedback_msg,
+                        "emoji": "✨",
+                        "sub":   "Loading next question...",
+                        "color": node["color"],
+                    }
+                    if next_node not in ONBOARDING_TREE:
+                        st.session_state.ob_done = True
+                    else:
+                        st.session_state.ob_node = next_node
+                    st.rerun()
+        else:
+            # Grid
+            for i in range(0, len(options), 2):
+                c1, c2 = st.columns(2)
+                for j, col_w in enumerate([c1, c2]):
+                    if i + j < len(options):
+                        emoji, label, next_node, feedback_msg = options[i + j]
+                        with col_w:
+                            if st.button(
+                                f"{emoji}  {label}",
+                                use_container_width=True,
+                                key=f"ob_{node['key']}_{next_node}"
+                            ):
+                                st.session_state.ob_answers[node["key"]] = next_node
+                                st.session_state.ob_feedback = {
+                                    "text":  feedback_msg,
+                                    "emoji": "✨",
+                                    "sub":   "Loading next question...",
+                                    "color": node["color"],
+                                }
+                                if next_node not in ONBOARDING_TREE:
+                                    st.session_state.ob_done = True
+                                else:
+                                    st.session_state.ob_node = next_node
+                                st.rerun()
+
+    # Back button
+    if current > 0:
+        st.markdown("<br>", unsafe_allow_html=True)
+        _, c, _ = st.columns([2, 1, 2])
+        with c:
+            if st.button("← Back", use_container_width=True, key="ob_back"):
+                st.session_state.ob_node = "start"
+                st.session_state.ob_answers.pop("user_detail", None)
+                st.rerun()
+
+
+# ════════════════════════════════════════════════════════
+# DASHBOARD HOME MODULE (inline)
+# ════════════════════════════════════════════════════════
+# ── AI PERSONALIZATION ENGINE ─────────────────────────────
+def get_personalized_insights(user_summary, topics, priority):
+    """Generate AI insights based on user profile + data"""
+
+    weak   = [t for t in priority if "Weak"    in t["label"]]
+    atrisk = [t for t in priority if "At-Risk" in t["label"]]
+    strong = [t for t in priority if "Strong"  in t["label"]]
+
+    insights = []
+
+    # Insight 1 — Profile based
+    if "JEE" in user_summary:
+        insights.append({
+            "icon":  "⚗️",
+            "title": "JEE Strategy",
+            "text":  "Focus on Physics & Math weak topics first. Use Bloom's L3 Apply quizzes for problem solving practice.",
+            "color": "#DC2626",
+        })
+    elif "NEET" in user_summary:
+        insights.append({
+            "icon":  "🩺",
+            "title": "NEET Strategy",
+            "text":  "Biology needs daily revision. Smriti's forgetting curve will help you retain cell biology and genetics.",
+            "color": "#059669",
+        })
+    elif "UPSC" in user_summary:
+        insights.append({
+            "icon":  "🏛️",
+            "title": "UPSC Strategy",
+            "text":  "Add 5 topics daily from History, Polity, and Current Affairs. Revision within 3 days is critical.",
+            "color": "#D97706",
+        })
+    elif "Class 10" in user_summary or "Class 12" in user_summary:
+        insights.append({
+            "icon":  "📋",
+            "title": "Board Exam Strategy",
+            "text":  "Board preparation needs chapter-wise mastery. Add each chapter and track retention weekly.",
+            "color": "#6366F1",
+        })
+    elif "B.Tech" in user_summary:
+        insights.append({
+            "icon":  "💻",
+            "title": "Engineering Strategy",
+            "text":  "Engineering subjects need application skills. Use Bloom's L3 & L4 quizzes for your core subjects.",
+            "color": "#0891B2",
+        })
+    else:
+        insights.append({
+            "icon":  "🎯",
+            "title": "Study Strategy",
+            "text":  "Add your study topics daily and take quizzes to strengthen memory. Consistency beats intensity!",
+            "color": "#6366F1",
+        })
+
+    # Insight 2 — Data based
+    if weak:
+        insights.append({
+            "icon":  "🚨",
+            "title": "Urgent Action Required",
+            "text":  f"**{weak[0]['topic_name']}** has only {weak[0]['retention']}% retention! Review it today before you forget completely.",
+            "color": "#DC2626",
+        })
+    elif atrisk:
+        insights.append({
+            "icon":  "⚠️",
+            "title": "Topics Fading Fast",
+            "text":  f"**{atrisk[0]['topic_name']}** is at {atrisk[0]['retention']}% — review it in the next 2 days to prevent forgetting.",
+            "color": "#D97706",
+        })
+    elif strong and len(topics) > 0:
+        insights.append({
+            "icon":  "🌟",
+            "title": "Great Memory Health!",
+            "text":  f"All {len(topics)} topics are in strong shape. Add new topics to keep growing your knowledge base!",
+            "color": "#059669",
+        })
+
+    # Insight 3 — Quiz suggestion
+    if len(topics) > 0:
+        lowest = min(priority, key=lambda x: x["retention"])
+        insights.append({
+            "icon":  "🧪",
+            "title": "Quiz Recommendation",
+            "text":  f"Take a Bloom's L1 quiz on **{lowest['topic_name']}** — it has the lowest retention and needs urgent reinforcement.",
+            "color": "#7C3AED",
+        })
+
+    return insights[:3]
+
+# ── NEXT ACTION BANNER ────────────────────────────────────
+def render_next_action(priority, topics):
+    """Show the single most important action right now"""
+
+    weak   = [t for t in priority if "Weak"    in t["label"]]
+    atrisk = [t for t in priority if "At-Risk" in t["label"]]
+
+    if not topics:
+        action = {
+            "emoji": "➕",
+            "title": "Add your first topic!",
+            "desc":  "Click 'Add Topic' above to start tracking your memory.",
+            "color": "#6366F1",
+        }
+    elif weak:
+        action = {
+            "emoji": "🚨",
+            "title": f"Review '{weak[0]['topic_name']}' NOW!",
+            "desc":  f"Only {weak[0]['retention']}% retained — go to Review List immediately.",
+            "color": "#DC2626",
+        }
+    elif atrisk:
+        action = {
+            "emoji": "⚠️",
+            "title": f"'{atrisk[0]['topic_name']}' is fading!",
+            "desc":  f"{atrisk[0]['retention']}% retained — review today to prevent forgetting.",
+            "color": "#D97706",
+        }
+    else:
+        action = {
+            "emoji": "🎯",
+            "title": "Take a quiz to strengthen memory!",
+            "desc":  "All topics are strong. Quiz yourself to go deeper with Bloom's Taxonomy.",
+            "color": "#059669",
+        }
+
+    st.markdown(f"""
+    <div style='background:{action["color"]}12;border:1.5px solid {action["color"]}44;
+                border-radius:12px;padding:16px 20px;margin-bottom:20px;
+                display:flex;align-items:center;gap:14px;'>
+        <span style='font-size:1.8rem;'>{action["emoji"]}</span>
+        <div>
+            <div style='font-weight:700;color:{action["color"]};font-size:0.95rem;'>
+                👉 Next Action: {action["title"]}
+            </div>
+            <div style='color:#64748B;font-size:0.82rem;margin-top:3px;'>
+                {action["desc"]}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ── STREAK CARD ───────────────────────────────────────────
+def render_streak_card(user_id, topics):
+    streak     = get_streak(user_id=user_id)
+    total_days = get_total_study_days(user_id=user_id)
+    total_xp   = get_total_xp(user_id=user_id)
+    today_xp   = get_today_xp(user_id=user_id)
+
+    fire = "🔥🔥🔥" if streak >= 30 else "🔥🔥" if streak >= 14 else "🔥" if streak >= 7 else "⚡" if streak >= 1 else "💤"
+    msg  = (
+        "Legendary! 🏆"              if streak >= 30 else
+        "On fire! Keep going!"        if streak >= 14 else
+        "Great streak! Don't break it!" if streak >= 7 else
+        "Building momentum!"          if streak >= 3 else
+        "Day 1 — every streak starts here!" if streak == 1 else
+        "Start your streak today!"
+    )
+
+    st.markdown(f"""
+    <div style='background:linear-gradient(135deg,#0F1B2D,#1E3A5F);
+                border-radius:16px;padding:20px 24px;margin-bottom:20px;
+                border:1px solid rgba(201,168,76,0.3);
+                display:flex;align-items:center;
+                justify-content:space-between;flex-wrap:wrap;gap:16px;'>
+        <div style='display:flex;align-items:center;gap:16px;'>
+            <div style='font-size:2.8rem;filter:drop-shadow(0 0 10px rgba(245,158,11,0.5));'>
+                {fire}
+            </div>
+            <div>
+                <div style='color:rgba(255,255,255,0.45);font-size:10px;
+                            text-transform:uppercase;letter-spacing:0.12em;
+                            font-weight:600;margin-bottom:3px;'>Study Streak</div>
+                <div style='display:flex;align-items:baseline;gap:6px;'>
+                    <span style='color:#C9A84C;font-size:2.2rem;font-weight:700;
+                                 font-family:Georgia,serif;'>{streak}</span>
+                    <span style='color:rgba(255,255,255,0.5);font-size:0.9rem;'>
+                        day{"s" if streak != 1 else ""}
+                    </span>
+                </div>
+                <div style='color:#C9A84C;font-size:0.8rem;margin-top:2px;'>{msg}</div>
+            </div>
+        </div>
+        <div style='display:flex;gap:0;'>
+            <div style='text-align:center;padding:0 20px;
+                        border-left:1px solid rgba(255,255,255,0.1);'>
+                <div style='color:#FFFFFF;font-size:1.5rem;font-weight:700;
+                            font-family:Georgia,serif;'>{total_days}</div>
+                <div style='color:rgba(255,255,255,0.35);font-size:10px;
+                            text-transform:uppercase;letter-spacing:0.08em;'>Total Days</div>
+            </div>
+            <div style='text-align:center;padding:0 20px;
+                        border-left:1px solid rgba(255,255,255,0.1);'>
+                <div style='color:#C9A84C;font-size:1.5rem;font-weight:700;
+                            font-family:Georgia,serif;'>{total_xp}</div>
+                <div style='color:rgba(255,255,255,0.35);font-size:10px;
+                            text-transform:uppercase;letter-spacing:0.08em;'>Total XP</div>
+            </div>
+            <div style='text-align:center;padding:0 20px;
+                        border-left:1px solid rgba(255,255,255,0.1);'>
+                <div style='color:#22C55E;font-size:1.5rem;font-weight:700;
+                            font-family:Georgia,serif;'>+{today_xp}</div>
+                <div style='color:rgba(255,255,255,0.35);font-size:10px;
+                            text-transform:uppercase;letter-spacing:0.08em;'>Today XP</div>
+            </div>
+            <div style='text-align:center;padding:0 20px;
+                        border-left:1px solid rgba(255,255,255,0.1);'>
+                <div style='color:#60A5FA;font-size:1.5rem;font-weight:700;
+                            font-family:Georgia,serif;'>{len(topics)}</div>
+                <div style='color:rgba(255,255,255,0.35);font-size:10px;
+                            text-transform:uppercase;letter-spacing:0.08em;'>Topics</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ── BLOOM'S PROGRESS NODES ────────────────────────────────
+def render_bloom_nodes():
+    best_bloom = st.session_state.get("best_bloom_achieved", 1)
+    bloom_data = [
+        (1, "🧠", "Remember", "#6B7280"),
+        (2, "💡", "Understand","#0891B2"),
+        (3, "⚙️", "Apply",    "#059669"),
+        (4, "🔍", "Analyze",  "#D97706"),
+        (5, "⚖️", "Evaluate", "#DC2626"),
+        (6, "🚀", "Create",   "#7C3AED"),
+    ]
+
+    nodes_html = "<div class='bloom-path'>"
+    for i, (lvl, emoji, name, color) in enumerate(bloom_data):
+        is_done    = lvl < best_bloom
+        is_current = lvl == best_bloom
+        is_locked  = lvl > best_bloom
+
+        if is_done:
+            bg, border, txt, opacity, lbl_col = color, color, "#FFFFFF", "1", color
+        elif is_current:
+            bg, border, txt, opacity, lbl_col = f"{color}20", color, color, "1", color
+        else:
+            bg, border, txt, opacity, lbl_col = "#F1F4F8", "#CBD5E1", "#94A3B8", "0.5", "#94A3B8"
+
+        pulse = "animation:pulse 1.5s infinite;" if is_current else ""
+        nodes_html += f"""
+        <div class='bloom-node' style='opacity:{opacity};'>
+            <div class='bloom-node-circle'
+                 style='background:{bg};border-color:{border};color:{txt};{pulse}'>
+                {'✓' if is_done else emoji}
+            </div>
+            <div class='bloom-node-label' style='color:{lbl_col};'>
+                L{lvl}<br/>{name}
+            </div>
+        </div>"""
+
+        if i < len(bloom_data) - 1:
+            conn_color = color if is_done else "#E2E8F0"
+            nodes_html += f"""
+            <div class='bloom-connector'
+                 style='background:{conn_color};margin-bottom:22px;'></div>"""
+
+    nodes_html += "</div>"
+    nodes_html += """
+    <style>
+    @keyframes pulse {
+        0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
+        70%  { box-shadow: 0 0 0 8px rgba(99,102,241,0); }
+        100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+    }
+    </style>"""
+    st.markdown(nodes_html, unsafe_allow_html=True)
+    st.caption(f"Currently at L{best_bloom} — Take a quiz to advance! 🎯")
+
+# ── MAIN RENDER ───────────────────────────────────────────
+def render_home(topics, user_id, load_topics_fn):
+    """Main home dashboard render function"""
+
+    user_summary = st.session_state.get("user_summary", "Student")
+    user_emoji   = st.session_state.get("user_emoji",   "🎓")
+    ai_tip       = st.session_state.get("ai_tip",       "")
+
+    # Page header
+    st.markdown(f"""
+    <div class='page-header'>
+        <div style='display:flex;align-items:center;gap:12px;'>
+            <div>
+                <div class='page-title'>Memory Dashboard</div>
+                <div class='page-subtitle'>
+                    {user_emoji} {user_summary} · Your personal knowledge retention overview
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    priority = get_review_priority(topics) if topics else []
+    weak     = [t for t in priority if "Weak"    in t["label"]]
+    atrisk   = [t for t in priority if "At-Risk" in t["label"]]
+    strong   = [t for t in priority if "Strong"  in t["label"]]
+
+    # ── NEXT ACTION BANNER ────────────────────────────────
+    render_next_action(priority, topics)
+
+    # ── STREAK CARD ───────────────────────────────────────
+    render_streak_card(user_id, topics)
+
+    if not topics:
+        st.info("👋 No topics yet! Click **➕ Add Topic** above to start tracking your memory.")
+        return
+
+    # ── METRICS ───────────────────────────────────────────
+    avg_ret    = int(sum(t["retention"] for t in priority) / len(priority)) if priority else 0
+    score_color = "#059669" if avg_ret >= 70 else "#D97706" if avg_ret >= 40 else "#DC2626"
+    score_label = "Excellent 🌟" if avg_ret >= 70 else "Needs Attention ⚠️" if avg_ret >= 40 else "Critical 🚨"
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("📚 Topics",   len(topics))
+    c2.metric("💪 Strong",   len(strong))
+    c3.metric("⚠️ At-Risk",  len(atrisk))
+    c4.metric("🔴 Weak",     len(weak))
+    with c5:
+        st.markdown(f"""
+        <div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;
+                    padding:16px 20px;text-align:center;
+                    box-shadow:0 1px 6px rgba(15,27,45,0.06);'>
+            <div style='font-size:10px;color:#64748B;text-transform:uppercase;
+                        letter-spacing:0.1em;font-weight:600;margin-bottom:6px;'>
+                Memory Score
+            </div>
+            <div style='font-size:2rem;font-weight:700;color:{score_color};
+                        font-family:Georgia,serif;'>{avg_ret}%</div>
+            <div style='font-size:11px;color:{score_color};margin-top:4px;'>{score_label}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── ALERTS ────────────────────────────────────────────
+    st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
+    if weak:
+        st.error(f"🚨 **{len(weak)} topic(s) need urgent review today!**")
+        for t in weak[:3]:
+            st.markdown(f"→ **{t['topic_name']}** `{t['subject']}` — `{t['retention']}%` retained")
+    if atrisk:
+        st.warning(f"⚠️ **{len(atrisk)} topic(s)** are fading. Review soon!")
+    if not weak and not atrisk:
+        st.success("✅ All topics in great shape! Keep it up.")
+
+    # ── AI PERSONALIZED INSIGHTS ──────────────────────────
+    st.markdown("---")
+    st.markdown("### 🤖 AI Insights — Personalized for You")
+
+    insights = get_personalized_insights(user_summary, topics, priority)
+    cols     = st.columns(len(insights))
+    for i, ins in enumerate(insights):
+        with cols[i]:
+            st.markdown(f"""
+            <div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;
+                        padding:20px;height:100%;border-top:3px solid {ins["color"]};
+                        box-shadow:0 2px 8px rgba(15,27,45,0.05);'>
+                <div style='font-size:1.8rem;margin-bottom:10px;'>{ins["icon"]}</div>
+                <div style='font-weight:700;color:#0F1B2D;font-size:0.9rem;
+                            margin-bottom:8px;'>{ins["title"]}</div>
+                <div style='color:#64748B;font-size:0.82rem;line-height:1.6;'>
+                    {ins["text"]}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # ── BLOOM'S PROGRESS ──────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 🎓 Bloom's Taxonomy Journey")
+    render_bloom_nodes()
+
+    # ── CHARTS ────────────────────────────────────────────
+    st.markdown("---")
+    col_l, col_r = st.columns(2)
+
+    with col_l:
+        st.markdown("#### 📂 Topics by Subject")
+        subjects = {}
+        for t in topics:
+            subjects[t["subject"]] = subjects.get(t["subject"], 0) + 1
+        fig = __import__("plotly.express", fromlist=["pie"]).pie(
+            values=list(subjects.values()),
+            names=list(subjects.keys()),
+            hole=0.5,
+            color_discrete_sequence=["#0F1B2D","#1E3A5F","#C9A84C","#2D6A4F","#8B1A1A","#374151"]
+        )
+        fig.update_layout(
+            height=280,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#FFFFFF",
+            margin=dict(t=30, b=0, l=0, r=0),
+            font=dict(color="#64748B"),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col_r:
+        st.markdown("#### 🏆 Memory Health Gauge")
+        total_xp = get_total_xp(user_id=user_id)
+        fig2 = __import__("plotly.graph_objects", fromlist=["Figure"]).Figure(
+            __import__("plotly.graph_objects", fromlist=["Indicator"]).Indicator(
+                mode="gauge+number",
+                value=avg_ret,
+                title={"text": "Average Retention %", "font": {"color": "#64748B", "size": 12}},
+                number={"font": {"color": "#0F1B2D", "family": "Georgia", "size": 36}, "suffix": "%"},
+                gauge={
+                    "axis":    {"range": [0, 100], "tickcolor": "#CBD5E1"},
+                    "bar":     {"color": "#1E3A5F", "thickness": 0.28},
+                    "bgcolor": "white",
+                    "steps":   [
+                        {"range": [0, 40],   "color": "#FEE2E2"},
+                        {"range": [40, 70],  "color": "#FEF3C7"},
+                        {"range": [70, 100], "color": "#DCFCE7"},
+                    ],
+                    "threshold": {"line": {"color": "#C9A84C", "width": 3}, "value": 70}
+                }
+            )
+        )
+        fig2.update_layout(height=280, paper_bgcolor="rgba(0,0,0,0)",
+                           margin=dict(t=20, b=10, l=10, r=10))
+        st.plotly_chart(fig2, use_container_width=True)
+
+
 # ── ROUTE ─────────────────────────────────────────────────
 if not st.session_state.user:
     if st.session_state.auth_mode == "landing":
@@ -848,9 +1465,23 @@ if not st.session_state.user:
         create_auth_page()
     st.stop()
 
-# ── USER IS LOGGED IN ─────────────────────────────────────
+# ── ONBOARDING CHECK — one time only ──────────────────────
 user_id = st.session_state.user.id
 
+if "onboarding_done" not in st.session_state:
+    # Check DB first
+    ob_data = get_onboarding(user_id)
+    if ob_data:
+        st.session_state.onboarding_done = True
+        st.session_state.user_summary    = SUMMARY_MAP.get(ob_data.get("user_detail",""), "Student")
+    else:
+        st.session_state.onboarding_done = False
+
+if not st.session_state.onboarding_done:
+    create_onboarding(user_id)
+    st.stop()
+
+# ── USER IS LOGGED IN ─────────────────────────────────────
 # Mark today studied + streak XP
 mark_today_studied(user_id=user_id)
 if "streak_xp_given" not in st.session_state:
@@ -923,241 +1554,11 @@ def chart_layout(title=""):
 CHART_COLORS = ["#0F1B2D","#1E3A5F","#C9A84C","#2D6A4F","#8B1A1A","#374151"]
 
 # ════════════════════════════════════════════════════════
-# PAGE 1 — HOME
+# PAGE 1 — HOME (Modular — see dashboard_home.py)
 # ════════════════════════════════════════════════════════
 if page == "Home":
-    st.markdown("""
-    <div class='page-header'>
-        <div class='page-title'>Memory Dashboard</div>
-        <div class='page-subtitle'>Your personal knowledge retention overview</div>
-    </div>
-    """, unsafe_allow_html=True)
-
     topics = load_topics()
-
-    # ── IMPROVEMENT 1: STREAK CARD ────────────────────────
-    streak      = get_streak(user_id=user_id)
-    total_days  = get_total_study_days(user_id=user_id)
-
-    # Streak emoji based on count
-    if streak >= 30:   fire = "🔥🔥🔥"
-    elif streak >= 14: fire = "🔥🔥"
-    elif streak >= 7:  fire = "🔥"
-    elif streak >= 1:  fire = "⚡"
-    else:              fire = "💤"
-
-    streak_msg = (
-        "Legendary! 🏆" if streak >= 30 else
-        "On fire! Keep going!" if streak >= 14 else
-        "Great streak! Don't break it!" if streak >= 7 else
-        "Building momentum!" if streak >= 3 else
-        "Day 1 — every streak starts here!" if streak == 1 else
-        "Start your streak today!"
-    )
-
-    st.markdown(f"""
-    <div class='streak-card'>
-        <div style='display:flex;align-items:center;gap:16px;'>
-            <div class='streak-fire'>{fire}</div>
-            <div>
-                <div style='color:rgba(255,255,255,0.5);font-size:10px;
-                            text-transform:uppercase;letter-spacing:0.12em;font-weight:600;'>
-                    Study Streak
-                </div>
-                <div style='display:flex;align-items:baseline;gap:6px;'>
-                    <span class='streak-number'>{streak}</span>
-                    <span style='color:rgba(255,255,255,0.6);font-size:0.9rem;'>
-                        day{'s' if streak != 1 else ''}
-                    </span>
-                </div>
-                <div style='color:#C9A84C;font-size:0.82rem;margin-top:2px;'>
-                    {streak_msg}
-                </div>
-            </div>
-        </div>
-        <div style='display:flex;gap:0;'>
-            <div class='streak-stat'>
-                <div style='color:#FFFFFF;font-size:1.6rem;font-weight:700;
-                            font-family:Georgia,serif;'>{total_days}</div>
-                <div class='streak-label'>Total Days</div>
-            </div>
-            <div class='streak-stat'>
-                <div style='color:#22C55E;font-size:1.6rem;font-weight:700;
-                            font-family:Georgia,serif;'>{len(topics) if topics else 0}</div>
-                <div class='streak-label'>Topics</div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ── IMPROVEMENT 2: BLOOM'S PROGRESS NODES ────────────
-    st.markdown("#### 🎓 Bloom's Taxonomy — Your Level Journey")
-
-    # Get best bloom level achieved from session state
-    best_bloom  = st.session_state.get("best_bloom_achieved", 1)
-    bloom_data  = [
-        (1, "🧠", "Remember", "#6B7280"),
-        (2, "💡", "Understand", "#0891B2"),
-        (3, "⚙️", "Apply", "#059669"),
-        (4, "🔍", "Analyze", "#D97706"),
-        (5, "⚖️", "Evaluate", "#DC2626"),
-        (6, "🚀", "Create", "#7C3AED"),
-    ]
-
-    nodes_html = "<div class='bloom-path'>"
-    for i, (lvl, emoji, name, color) in enumerate(bloom_data):
-        is_done    = lvl < best_bloom
-        is_current = lvl == best_bloom
-        is_locked  = lvl > best_bloom
-
-        if is_done:
-            bg       = color
-            border   = color
-            txt      = "#FFFFFF"
-            opacity  = "1"
-            lbl_col  = color
-        elif is_current:
-            bg       = f"{color}20"
-            border   = color
-            txt      = color
-            opacity  = "1"
-            lbl_col  = color
-        else:
-            bg       = "#F1F4F8"
-            border   = "#CBD5E1"
-            txt      = "#94A3B8"
-            opacity  = "0.5"
-            lbl_col  = "#94A3B8"
-
-        pulse = "animation:pulse 1.5s infinite;" if is_current else ""
-
-        nodes_html += f"""
-        <div class='bloom-node' style='opacity:{opacity};'>
-            <div class='bloom-node-circle'
-                 style='background:{bg};border-color:{border};
-                        color:{txt};{pulse}'>
-                {'✓' if is_done else emoji}
-            </div>
-            <div class='bloom-node-label' style='color:{lbl_col};'>
-                L{lvl}<br/>{name}
-            </div>
-        </div>"""
-
-        if i < len(bloom_data) - 1:
-            conn_color = color if is_done else "#E2E8F0"
-            nodes_html += f"""
-            <div class='bloom-connector'
-                 style='background:{conn_color};
-                        margin-bottom:22px;'></div>"""
-
-    nodes_html += "</div>"
-    nodes_html += """
-    <style>
-    @keyframes pulse {
-        0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
-        70%  { box-shadow: 0 0 0 8px rgba(99,102,241,0); }
-        100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
-    }
-    </style>"""
-
-    st.markdown(nodes_html, unsafe_allow_html=True)
-    st.caption(f"Currently at L{best_bloom} — Take a quiz to advance levels! 🎯")
-    st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
-
-    if not topics:
-        st.info("👋 Welcome to Smriti! Click **➕ Add Topic** above to start tracking your memory.")
-    else:
-        priority = get_review_priority(topics)
-        weak   = [t for t in priority if "Weak"    in t["label"]]
-        atrisk = [t for t in priority if "At-Risk" in t["label"]]
-        strong = [t for t in priority if "Strong"  in t["label"]]
-
-        # ── IMPROVEMENT 3: MEMORY HEALTH SCORE ───────────
-        avg_ret    = int(sum(t["retention"] for t in priority) / len(priority))
-        if avg_ret >= 70:
-            score_color = "#059669"; score_label = "Excellent Memory Health! 🌟"
-        elif avg_ret >= 40:
-            score_color = "#D97706"; score_label = "Memory Needs Attention ⚠️"
-        else:
-            score_color = "#DC2626"; score_label = "Critical — Review Now! 🚨"
-
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("📚 Topics",  len(topics))
-        c2.metric("💪 Strong",  len(strong))
-        c3.metric("⚠️ At-Risk", len(atrisk))
-        c4.metric("🔴 Weak",    len(weak))
-
-        with c5:
-            st.markdown(f"""
-            <div class='memory-score-card'>
-                <div class='memory-score-title'>Memory Score</div>
-                <div class='memory-score-value' style='color:{score_color};'>
-                    {avg_ret}%
-                </div>
-                <div class='memory-score-label'>{score_label}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
-
-        if weak:
-            st.error(f"🚨 **{len(weak)} topic(s) need urgent review today!**")
-            for t in weak[:3]:
-                st.markdown(f"→ **{t['topic_name']}** `{t['subject']}` — `{t['retention']}%` retained")
-        if atrisk:
-            st.warning(f"⚠️ **{len(atrisk)} topic(s)** are fading. Review soon!")
-        if not weak and not atrisk:
-            st.success("✅ All topics in great shape! Keep it up.")
-
-        st.markdown("---")
-
-        col_l, col_r = st.columns(2)
-        with col_l:
-            st.markdown("### 📂 Topics by Subject")
-            subjects = {}
-            for t in topics:
-                subjects[t["subject"]] = subjects.get(t["subject"], 0) + 1
-            fig = px.pie(
-                values=list(subjects.values()),
-                names=list(subjects.keys()),
-                hole=0.5,
-                color_discrete_sequence=CHART_COLORS
-            )
-            fig.update_traces(textfont_color="#0F1B2D")
-            fig.update_layout(height=300, **chart_layout("Topics by Subject"))
-            st.plotly_chart(fig, use_container_width=True)
-
-        with col_r:
-            st.markdown("### 🏆 Memory Health Score")
-            avg_ret = int(sum(t["retention"] for t in priority) / len(priority))
-            fig2 = go.Figure(go.Indicator(
-                mode="gauge+number",
-                value=avg_ret,
-                title={"text": "Average Retention %",
-                       "font": {"color": "#64748B", "family": "Inter", "size": 13}},
-                number={"font": {"color": "#0F1B2D", "family": "Playfair Display", "size": 42},
-                        "suffix": "%"},
-                gauge={
-                    "axis": {"range": [0,100], "tickcolor": "#CBD5E1",
-                             "tickfont": {"color": "#94A3B8"}},
-                    "bar": {"color": "#1E3A5F", "thickness": 0.28},
-                    "bgcolor": "white",
-                    "bordercolor": "#E2E8F0",
-                    "steps": [
-                        {"range": [0,40],  "color": "#FEE2E2"},
-                        {"range": [40,70], "color": "#FEF3C7"},
-                        {"range": [70,100],"color": "#DCFCE7"},
-                    ],
-                    "threshold": {
-                        "line": {"color": "#C9A84C", "width": 3},
-                        "value": 70
-                    }
-                }
-            ))
-            fig2.update_layout(height=300, paper_bgcolor="rgba(0,0,0,0)",
-                               margin=dict(t=30, b=10, l=20, r=20))
-            st.plotly_chart(fig2, use_container_width=True)
-
+    render_home(topics, user_id, load_topics)
 # ════════════════════════════════════════════════════════
 # PAGE 2 — ADD TOPIC
 # ════════════════════════════════════════════════════════
