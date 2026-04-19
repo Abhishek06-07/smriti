@@ -1,332 +1,169 @@
 """
-Smriti — AI Question Generator v2
-Web Search + Wikipedia + Groq + Bloom's Taxonomy
-Random 5-10 questions per quiz
+Smriti — Question Generator v3
+Mixed types: MCQ, Fill Blank, True/False, One Word, Match
+User profile aware + Web search context
 """
 
-import json
-import os
-import random
+import json, os, random
 from groq import Groq
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Load .env
 load_dotenv()
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 load_dotenv(dotenv_path=Path.cwd() / ".env")
 
-# ── BLOOM'S TAXONOMY ──────────────────────────────────────
 BLOOMS_LEVELS = {
-    1: {
-        "name":        "Remember",
-        "emoji":       "🧠",
-        "color":       "#6B7280",
-        "description": "Recall facts, definitions, basic concepts",
-        "keywords":    "Define, List, Name, Recall, Identify, State",
-        "difficulty":  "Easy",
-        "hint":        "Ask questions that test pure memory and recall of facts.",
-    },
-    2: {
-        "name":        "Understand",
-        "emoji":       "💡",
-        "color":       "#0891B2",
-        "description": "Explain ideas or concepts in own words",
-        "keywords":    "Explain, Describe, Interpret, Classify, Summarize",
-        "difficulty":  "Easy-Medium",
-        "hint":        "Ask questions that test if student can explain the concept.",
-    },
-    3: {
-        "name":        "Apply",
-        "emoji":       "⚙️",
-        "color":       "#059669",
-        "description": "Use knowledge in new situations, solve problems",
-        "keywords":    "Calculate, Solve, Use, Demonstrate, Apply",
-        "difficulty":  "Medium",
-        "hint":        "Give a real-world scenario. Student must apply the concept.",
-    },
-    4: {
-        "name":        "Analyze",
-        "emoji":       "🔍",
-        "color":       "#D97706",
-        "description": "Draw connections, compare, break down information",
-        "keywords":    "Compare, Differentiate, Examine, Break down, Contrast",
-        "difficulty":  "Medium-Hard",
-        "hint":        "Ask questions requiring comparison or examining relationships.",
-    },
-    5: {
-        "name":        "Evaluate",
-        "emoji":       "⚖️",
-        "color":       "#DC2626",
-        "description": "Justify decisions, critique, make judgments",
-        "keywords":    "Judge, Justify, Critique, Argue, Defend, Assess",
-        "difficulty":  "Hard",
-        "hint":        "Present a claim. Student must evaluate its validity.",
-    },
-    6: {
-        "name":        "Create",
-        "emoji":       "🚀",
-        "color":       "#7C3AED",
-        "description": "Design new solutions, combine ideas, formulate",
-        "keywords":    "Design, Construct, Formulate, Propose, Create, Plan",
-        "difficulty":  "Hardest",
-        "hint":        "Ask student to design or propose something new using the concept.",
-    },
+    1: {"name":"Remember",  "emoji":"🧠","color":"#6B7280","difficulty":"Easy",        "hint":"Test basic recall and definitions.",              "description":"Recall facts, definitions, basic concepts",    "keywords":"Define, List, Name, Recall, Identify"},
+    2: {"name":"Understand","emoji":"💡","color":"#0891B2","difficulty":"Easy-Medium",  "hint":"Test if student can explain the concept.",          "description":"Explain ideas or concepts in own words",        "keywords":"Explain, Describe, Interpret, Classify"},
+    3: {"name":"Apply",     "emoji":"⚙️","color":"#059669","difficulty":"Medium",       "hint":"Give real scenario, student applies concept.",       "description":"Use knowledge in new situations",              "keywords":"Calculate, Solve, Use, Demonstrate, Apply"},
+    4: {"name":"Analyze",   "emoji":"🔍","color":"#D97706","difficulty":"Medium-Hard",  "hint":"Compare or break down relationships.",               "description":"Draw connections, compare, break down info",   "keywords":"Compare, Differentiate, Examine, Contrast"},
+    5: {"name":"Evaluate",  "emoji":"⚖️","color":"#DC2626","difficulty":"Hard",         "hint":"Evaluate claims and justify answers.",               "description":"Justify decisions, critique, make judgments",  "keywords":"Judge, Justify, Critique, Argue, Defend"},
+    6: {"name":"Create",    "emoji":"🚀","color":"#7C3AED","difficulty":"Hardest",      "hint":"Design or propose something new.",                   "description":"Design new solutions, combine ideas",          "keywords":"Design, Construct, Formulate, Propose, Create"},
 }
 
-# ── WEB CONTENT FETCHER ───────────────────────────────────
+def get_question_mix(bloom_level, num_questions):
+    if bloom_level <= 2:
+        pool = ["mcq","mcq","fill_blank","true_false","one_word"]
+    elif bloom_level <= 4:
+        pool = ["mcq","mcq","fill_blank","true_false","match"]
+    else:
+        pool = ["mcq","mcq","fill_blank","match","true_false"]
+    mix = [pool[i % len(pool)] for i in range(num_questions)]
+    random.shuffle(mix)
+    return mix
+
 def fetch_wikipedia_content(topic, subject):
-    """Fetch Wikipedia summary for topic"""
     try:
         import wikipediaapi
-        wiki = wikipediaapi.Wikipedia(
-            language   = 'en',
-            user_agent = 'Smriti/1.0 (Educational App)'
-        )
-        # Try exact topic first
+        wiki = wikipediaapi.Wikipedia(language='en', user_agent='Smriti/1.0')
         page = wiki.page(topic)
-        if page.exists():
-            # Get first 1500 chars — enough context
-            return page.summary[:1500]
-
-        # Try subject + topic
+        if page.exists(): return page.summary[:1500]
         page = wiki.page(f"{topic} {subject}")
-        if page.exists():
-            return page.summary[:1500]
-
+        if page.exists(): return page.summary[:1500]
         return None
-    except Exception:
-        return None
+    except Exception: return None
 
 def fetch_web_content(topic, subject):
-    """Fetch web content using DuckDuckGo"""
     try:
         from duckduckgo_search import DDGS
         with DDGS() as ddgs:
-            results = ddgs.text(
-                f"{topic} {subject} explanation concepts",
-                max_results = 4
-            )
-            if results:
-                # Combine snippets
-                content = " ".join([r.get("body", "") for r in results])
-                return content[:1500]
+            results = ddgs.text(f"{topic} {subject} explanation", max_results=3)
+            if results: return " ".join([r.get("body","") for r in results])[:1500]
         return None
-    except Exception:
-        return None
+    except Exception: return None
 
 def get_topic_context(topic, subject):
-    """
-    Get rich context from multiple sources
-    Returns combined content string
-    """
-    context_parts = []
+    parts = []
+    wiki = fetch_wikipedia_content(topic, subject)
+    if wiki: parts.append(f"[Wikipedia]: {wiki}")
+    web  = fetch_web_content(topic, subject)
+    if web:  parts.append(f"[Web]: {web}")
+    return "\n\n".join(parts) if parts else None
 
-    # Source 1: Wikipedia
-    wiki_content = fetch_wikipedia_content(topic, subject)
-    if wiki_content:
-        context_parts.append(f"[Wikipedia]: {wiki_content}")
-
-    # Source 2: Web search
-    web_content = fetch_web_content(topic, subject)
-    if web_content:
-        context_parts.append(f"[Web]: {web_content}")
-
-    if context_parts:
-        return "\n\n".join(context_parts)
-
-    # Fallback: No context — let Groq use its training
-    return None
-
-# ── GET GROQ CLIENT ───────────────────────────────────────
 def get_client():
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        for env_path in [Path(__file__).parent / ".env", Path.cwd() / ".env"]:
-            if env_path.exists():
-                with open(env_path) as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith("GROQ_API_KEY="):
-                            api_key = line.split("=", 1)[1].strip()
-                            break
-            if api_key:
-                break
-    if not api_key:
-        raise ValueError("GROQ_API_KEY not found in .env file!")
+        for p in [Path(__file__).parent/".env", Path.cwd()/".env"]:
+            if p.exists():
+                for line in open(p):
+                    if line.strip().startswith("GROQ_API_KEY="):
+                        api_key = line.strip().split("=",1)[1].strip()
+                        break
+            if api_key: break
+    if not api_key: raise ValueError("GROQ_API_KEY not found!")
     return Groq(api_key=api_key)
 
-# ── BUILD PROMPT ──────────────────────────────────────────
-def build_prompt(topic_name, subject, bloom_level, num_questions, context=None):
-    level_info = BLOOMS_LEVELS[bloom_level]
+def build_prompt(topic_name, subject, bloom_level, num_questions, question_mix, user_profile, context=None):
+    level = BLOOMS_LEVELS[bloom_level]
+    ctx_section = f"\nREFERENCE CONTENT:\n{context}\n" if context else ""
+    type_plan = "\n".join([f"Q{i+1}: {question_mix[i]}" for i in range(len(question_mix))])
 
-    context_section = ""
-    if context:
-        context_section = f"""
-REFERENCE CONTENT (use this to create accurate, content-based questions):
-{context}
+    return f"""You are an expert {subject} teacher generating a quiz for a {user_profile}.
 
-IMPORTANT: Base your questions on the above content. Questions must be specific and factual, not generic.
-"""
+TOPIC: {topic_name} | SUBJECT: {subject}
+BLOOM'S LEVEL: L{bloom_level} — {level['name']} | INSTRUCTION: {level['hint']}
+{ctx_section}
+QUESTION TYPE PLAN:
+{type_plan}
 
-    prompt = f"""You are an expert {subject} teacher creating a quiz using Bloom's Taxonomy.
+Generate exactly {num_questions} questions following the plan. Return ONLY valid JSON:
 
-TOPIC: {topic_name}
-SUBJECT: {subject}
-BLOOM'S LEVEL: Level {bloom_level} — {level_info['name']}
-DESCRIPTION: {level_info['description']}
-KEYWORDS: {level_info['keywords']}
-INSTRUCTION: {level_info['hint']}
-NUMBER OF QUESTIONS: {num_questions}
-{context_section}
-
-Generate exactly {num_questions} UNIQUE MCQ questions at Bloom's Level {bloom_level}.
-
-STRICT RULES:
-1. ALL questions MUST be at Level {bloom_level} — {level_info['name']}
-2. Each question must have exactly 4 options (A, B, C, D)
-3. Only ONE correct answer per question
-4. Questions must be DIVERSE — cover different aspects of the topic
-5. Wrong options must be plausible — not obviously wrong
-6. NO repetition — each question must test something different
-7. Keep each question under 150 characters
-8. If reference content is provided, base questions on it
-9. Return ONLY valid JSON — no markdown, no extra text
-
-RETURN THIS EXACT JSON FORMAT:
 {{
-  "bloom_level": {bloom_level},
-  "level_name": "{level_info['name']}",
-  "num_questions": {num_questions},
   "questions": [
-    {{
-      "id": 1,
-      "question": "Question text?",
-      "bloom_keyword": "Define",
-      "options": {{
-        "A": "Option A",
-        "B": "Option B",
-        "C": "Option C",
-        "D": "Option D"
-      }},
-      "correct": "A",
-      "explanation": "Why this answer is correct"
-    }}
+    {{"id":1,"type":"mcq","question":"...?","bloom_keyword":"Identify","options":{{"A":"...","B":"...","C":"...","D":"..."}},"correct":"A","explanation":"..."}},
+    {{"id":2,"type":"fill_blank","question":"The ___ is the powerhouse of the cell.","bloom_keyword":"Recall","correct":"mitochondria","explanation":"..."}},
+    {{"id":3,"type":"true_false","question":"Water boils at 100°C at sea level.","bloom_keyword":"Recall","correct":"True","explanation":"..."}},
+    {{"id":4,"type":"one_word","question":"What gas do plants absorb during photosynthesis?","bloom_keyword":"Name","correct":"CO2","explanation":"..."}},
+    {{"id":5,"type":"match","question":"Match the following:","bloom_keyword":"Classify","pairs":[{{"term":"A","match":"1"}},{{"term":"B","match":"2"}},{{"term":"C","match":"3"}},{{"term":"D","match":"4"}}],"correct":"match_all","explanation":"..."}}
   ]
-}}
+}}"""
 
-Generate all {num_questions} questions following the same format."""
-
-    return prompt
-
-# ── MAIN GENERATE FUNCTION ────────────────────────────────
 def generate_questions(topic_name, subject, bloom_level,
-                       understanding_score=7, retention_pct=50):
-    """
-    Generate 5-10 random questions using Web Search + Groq
-    """
-    # Random number of questions between 5-10
+                       understanding_score=7, retention_pct=50, user_profile="Student"):
     num_questions = random.randint(5, 10)
-
+    question_mix  = get_question_mix(bloom_level, num_questions)
     try:
-        # Step 1: Fetch web context
-        print(f"🔍 Fetching content for: {topic_name}...")
-        context = get_topic_context(topic_name, subject)
-
-        if context:
-            print(f"✅ Context fetched ({len(context)} chars)")
-        else:
-            print("⚠️ No web context — using AI knowledge")
-
-        # Step 2: Build prompt with context
-        client = get_client()
-        prompt = build_prompt(
-            topic_name    = topic_name,
-            subject       = subject,
-            bloom_level   = bloom_level,
-            num_questions = num_questions,
-            context       = context
-        )
-
-        # Step 3: Generate with Groq
+        context  = get_topic_context(topic_name, subject)
+        client   = get_client()
+        prompt   = build_prompt(topic_name, subject, bloom_level,
+                                num_questions, question_mix, user_profile, context)
         response = client.chat.completions.create(
             model    = "llama-3.3-70b-versatile",
             messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        f"You are an expert educator specializing in Bloom's Taxonomy Level {bloom_level} "
-                        f"({BLOOMS_LEVELS[bloom_level]['name']}). "
-                        "Create questions based on provided content when available. "
-                        "Always respond with valid JSON only. No markdown, no extra text."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
+                {"role":"system","content":f"Expert educator. Bloom's L{bloom_level}. Return ONLY valid JSON."},
+                {"role":"user",  "content": prompt}
             ],
-            temperature = 0.9,   # High = more variety
-            max_tokens  = 3000,  # More tokens for more questions
+            temperature = 0.85,
+            max_tokens  = 3500,
         )
+        raw = response.choices[0].message.content.strip()
+        if "```json" in raw: raw = raw.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw:   raw = raw.split("```")[1].split("```")[0].strip()
+        data = json.loads(raw)
+        qs   = data.get("questions", [])
+        if not qs: return None, None, "No questions generated"
+        return qs, context, None
+    except json.JSONDecodeError as e: return None, None, f"JSON error: {e}"
+    except Exception as e:            return None, None, f"Error: {e}"
 
-        raw_text = response.choices[0].message.content.strip()
-
-        # Clean markdown if present
-        if "```json" in raw_text:
-            raw_text = raw_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw_text:
-            raw_text = raw_text.split("```")[1].split("```")[0].strip()
-
-        data      = json.loads(raw_text)
-        questions = data.get("questions", [])
-
-        if not questions:
-            return None, None, "No questions generated"
-
-        print(f"✅ Generated {len(questions)} questions at L{bloom_level} {BLOOMS_LEVELS[bloom_level]['name']}")
-        return questions, context, None
-
-    except json.JSONDecodeError as e:
-        return None, None, f"JSON parse error: {str(e)}"
-    except Exception as e:
-        return None, None, f"Error: {str(e)}"
-
-# ── CALCULATE SCORE ───────────────────────────────────────
 def calculate_score(questions, user_answers):
     correct = 0
     results = []
-
     for q in questions:
-        qid         = str(q["id"])
-        user_ans    = user_answers.get(qid, "")
-        correct_ans = q["correct"]
-        is_correct  = user_ans == correct_ans
-        if is_correct:
-            correct += 1
+        qid      = str(q["id"])
+        user_ans = str(user_answers.get(qid, "")).strip()
+        q_type   = q.get("type", "mcq")
+        corr_ans = str(q.get("correct", "")).strip()
 
+        if q_type in ["fill_blank","one_word"]:
+            is_correct = user_ans.lower() == corr_ans.lower()
+        elif q_type == "true_false":
+            is_correct = user_ans.lower() == corr_ans.lower()
+        elif q_type == "match":
+            is_correct = user_ans == "match_submitted"
+        else:
+            is_correct = user_ans == corr_ans
+
+        if is_correct: correct += 1
         results.append({
-            "id":            q["id"],
-            "question":      q["question"],
-            "bloom_keyword": q.get("bloom_keyword", ""),
-            "user_answer":   user_ans,
-            "correct_ans":   correct_ans,
-            "is_correct":    is_correct,
-            "explanation":   q.get("explanation", ""),
-            "options":       q["options"],
+            "id": q["id"], "type": q_type,
+            "question": q["question"],
+            "bloom_keyword": q.get("bloom_keyword",""),
+            "user_answer": user_ans, "correct_ans": corr_ans,
+            "is_correct": is_correct,
+            "explanation": q.get("explanation",""),
+            "options": q.get("options",{}),
+            "pairs":   q.get("pairs",[]),
         })
+    total = len(questions)
+    return {"correct":correct,"total":total,
+            "score_pct": round((correct/total)*100) if total else 0,
+            "results":results}
 
-    return {
-        "correct":   correct,
-        "total":     len(questions),
-        "score_pct": round((correct / len(questions)) * 100),
-        "results":   results,
-    }
-
-# ── RETENTION BOOST ───────────────────────────────────────
 def quiz_to_retention_boost(score_pct, bloom_level):
-    base = {1:3, 2:4, 3:5, 4:6, 5:7, 6:8}.get(bloom_level, 5)
-    if score_pct >= 80:   return min(10, base + 2)
+    base = {1:3,2:4,3:5,4:6,5:7,6:8}.get(bloom_level, 5)
+    if score_pct >= 80:   return min(10, base+2)
     elif score_pct >= 60: return base
-    elif score_pct >= 40: return max(2, base - 1)
+    elif score_pct >= 40: return max(2, base-1)
     else:                 return 2

@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime
 from database import (
-    init_db, add_topic, get_all_topics, add_review,
+    init_db, add_topic, get_all_topics, add_review, delete_topic,
     init_streak_table, mark_today_studied,
     get_streak, get_total_study_days,
     init_xp_table, add_xp, get_total_xp,
@@ -1940,10 +1940,10 @@ elif page == "Quiz":
                 {sel_level['emoji']} L{st.session_state.selected_bloom} — {sel_level['name']}
             </span>
             <span style='color:#374151;font-size:0.9rem;margin-left:8px;'>
-                {sel_level['description']}
+                {sel_level.get('description', sel_level.get('hint', ''))}
             </span><br/>
             <span style='color:#64748B;font-size:0.82rem;'>
-                Keywords: {sel_level['keywords']}
+                Keywords: {sel_level.get('keywords', sel_level.get('hint', ''))}
             </span>
         </div>
         """, unsafe_allow_html=True)

@@ -1,0 +1,22 @@
+Model,Metric,Value,Category
+Poly Regression,R²,1.0,Regression
+Poly Regression,Adjusted R²,1.0,Regression
+Poly Regression,RMSE,0.0,Regression
+Poly Regression,MAE,0.0,Regression
+Poly Regression,MAPE,0.0,Regression
+Poly Regression,Pearson r,1.0,Regression
+Poly Regression,CV R² Mean,1.0,CV
+Poly Regression,CV R² Std,0.0,CV
+Decision Tree,Accuracy,1.0,Classification
+Decision Tree,F1 Weighted,1.0,Classification
+Decision Tree,Precision W,1.0,Classification
+Decision Tree,Recall W,1.0,Classification
+Decision Tree,F1 Macro,1.0,Classification
+Decision Tree,Cohen Kappa,1.0,Classification
+Decision Tree,MCC,1.0,Classification
+Decision Tree,ROC-AUC,1.0,Classification
+Decision Tree,CV Acc Mean,1.0,CV
+K-Means(k=3),Silhouette,0.3974,Clustering
+K-Means(k=3),Davies-Bouldin,1.089,Clustering
+K-Means(k=3),Calinski-H,36862.71,Clustering
+K-Means(k=3),Inertia,913277.66,Clustering
