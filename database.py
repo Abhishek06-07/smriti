@@ -5,8 +5,13 @@ Uses Supabase (PostgreSQL) with user authentication
 
 import os
 from datetime import datetime, date, timedelta
-from dotenv import load_dotenv
 from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        return False
 
 # Load .env
 load_dotenv()

@@ -5,9 +5,13 @@ User profile aware + Web search context
 """
 
 import json, os, random
-from groq import Groq
-from dotenv import load_dotenv
 from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        return False
 
 load_dotenv()
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
@@ -62,6 +66,11 @@ def get_topic_context(topic, subject):
     return "\n\n".join(parts) if parts else None
 
 def get_client():
+    try:
+        from groq import Groq
+    except ImportError as exc:
+        raise ImportError("groq package is not installed") from exc
+
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         for p in [Path(__file__).parent/".env", Path.cwd()/".env"]:
