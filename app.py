@@ -1484,6 +1484,13 @@ def render_home(topics, user_id, load_topics_fn):
     avg_ret    = int(sum(t["retention"] for t in priority) / len(priority)) if priority else 0
     score_color = "#059669" if avg_ret >= 70 else "#D97706" if avg_ret >= 40 else "#DC2626"
     score_label = "Excellent 🌟" if avg_ret >= 70 else "Needs Attention ⚠️" if avg_ret >= 40 else "Critical 🚨"
+    review_now  = weak[:3]
+    review_soon = atrisk[:2]
+    recent_topics = sorted(
+        topics,
+        key=lambda t: str(t.get("date_learned") or ""),
+        reverse=True
+    )[:4]
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("📚 Topics",   len(topics))
@@ -1533,6 +1540,221 @@ def render_home(topics, user_id, load_topics_fn):
                             margin-bottom:8px;'>{ins["title"]}</div>
                 <div style='color:#64748B;font-size:0.82rem;line-height:1.6;'>
                     {ins["text"]}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # ── TODAY'S STUDY PLAN ───────────────────────────────
+    st.markdown("---")
+    st.markdown("### 📅 Today's Study Plan")
+
+    plan_col_l, plan_col_r = st.columns([1.4, 1])
+
+    with plan_col_l:
+        total_plan_items = len(review_now) + len(review_soon)
+        estimated_minutes = max(10, total_plan_items * 8)
+
+        st.markdown(f"""
+        <div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;
+                    padding:20px 22px;box-shadow:0 2px 8px rgba(15,27,45,0.05);'>
+            <div style='display:flex;justify-content:space-between;align-items:center;
+                        gap:12px;flex-wrap:wrap;margin-bottom:16px;'>
+                <div>
+                    <div style='font-size:10px;color:#64748B;text-transform:uppercase;
+                                letter-spacing:0.12em;font-weight:600;margin-bottom:6px;'>
+                        Smart Revision Queue
+                    </div>
+                    <div style='font-weight:700;color:#0F1B2D;font-size:1.05rem;'>
+                        {total_plan_items if total_plan_items else len(priority[:3])} topic(s) worth touching today
+                    </div>
+                </div>
+                <div style='background:#EEF2FF;border:1px solid #C7D2FE;border-radius:999px;
+                            padding:8px 12px;color:#3730A3;font-size:0.8rem;font-weight:600;'>
+                    ~ {estimated_minutes} min study block
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        if review_now:
+            st.markdown("**Review Now**")
+            for idx, topic in enumerate(review_now, start=1):
+                st.markdown(f"""
+                <div style='background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;
+                            padding:12px 14px;margin-bottom:10px;'>
+                    <div style='display:flex;justify-content:space-between;gap:10px;align-items:center;'>
+                        <div>
+                            <div style='font-weight:700;color:#991B1B;font-size:0.92rem;'>
+                                {idx}. {topic["topic_name"]}
+                            </div>
+                            <div style='color:#7F1D1D;font-size:0.8rem;'>
+                                {topic["subject"]} · {topic["retention"]}% retained · needs rescue today
+                            </div>
+                        </div>
+                        <div style='color:#DC2626;font-weight:700;font-size:0.9rem;'>Urgent</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        if review_soon:
+            st.markdown("**Review Soon**")
+            for topic in review_soon:
+                st.markdown(f"""
+                <div style='background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;
+                            padding:12px 14px;margin-bottom:10px;'>
+                    <div style='display:flex;justify-content:space-between;gap:10px;align-items:center;'>
+                        <div>
+                            <div style='font-weight:700;color:#92400E;font-size:0.92rem;'>
+                                {topic["topic_name"]}
+                            </div>
+                            <div style='color:#A16207;font-size:0.8rem;'>
+                                {topic["subject"]} · {topic["retention"]}% retained · revise before it drops further
+                            </div>
+                        </div>
+                        <div style='color:#D97706;font-weight:700;font-size:0.9rem;'>Soon</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        if not review_now and not review_soon:
+            strongest_topic = max(priority, key=lambda x: x["retention"])
+            st.markdown(f"""
+            <div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;
+                        padding:14px 16px;margin-bottom:8px;'>
+                <div style='font-weight:700;color:#166534;font-size:0.96rem;'>
+                    Everything looks stable today
+                </div>
+                <div style='color:#15803D;font-size:0.84rem;margin-top:4px;line-height:1.6;'>
+                    Your best-held topic is <strong>{strongest_topic["topic_name"]}</strong> at
+                    {strongest_topic["retention"]}% retention. This is a great day to add a fresh topic
+                    or attempt a higher Bloom's level quiz.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with plan_col_r:
+        strongest_topic = max(priority, key=lambda x: x["retention"])
+        weakest_topic   = min(priority, key=lambda x: x["retention"])
+        avg_reviews     = round(sum(t["review_count"] for t in topics) / len(topics), 1) if topics else 0
+
+        st.markdown(f"""
+        <div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;
+                    padding:20px;box-shadow:0 2px 8px rgba(15,27,45,0.05);height:100%;'>
+            <div style='font-size:10px;color:#64748B;text-transform:uppercase;
+                        letter-spacing:0.12em;font-weight:600;margin-bottom:10px;'>
+                Snapshot
+            </div>
+            <div style='background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;
+                        padding:14px 16px;margin-bottom:12px;'>
+                <div style='color:#64748B;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;'>
+                    Best Held Topic
+                </div>
+                <div style='font-weight:700;color:#0F1B2D;font-size:1rem;margin-top:4px;'>
+                    {strongest_topic["topic_name"]}
+                </div>
+                <div style='color:#059669;font-size:0.84rem;margin-top:4px;'>
+                    {strongest_topic["retention"]}% retained · {strongest_topic["subject"]}
+                </div>
+            </div>
+            <div style='background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;
+                        padding:14px 16px;margin-bottom:12px;'>
+                <div style='color:#64748B;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;'>
+                    Needs Rescue First
+                </div>
+                <div style='font-weight:700;color:#0F1B2D;font-size:1rem;margin-top:4px;'>
+                    {weakest_topic["topic_name"]}
+                </div>
+                <div style='color:#DC2626;font-size:0.84rem;margin-top:4px;'>
+                    {weakest_topic["retention"]}% retained · {weakest_topic["subject"]}
+                </div>
+            </div>
+            <div style='display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;'>
+                <div style='background:#EEF2FF;border-radius:10px;padding:12px;text-align:center;'>
+                    <div style='font-family:Georgia,serif;font-size:1.5rem;font-weight:700;color:#3730A3;'>
+                        {len(set(t["subject"] for t in topics))}
+                    </div>
+                    <div style='color:#6366F1;font-size:11px;text-transform:uppercase;'>Subjects</div>
+                </div>
+                <div style='background:#ECFDF5;border-radius:10px;padding:12px;text-align:center;'>
+                    <div style='font-family:Georgia,serif;font-size:1.5rem;font-weight:700;color:#047857;'>
+                        {avg_reviews}
+                    </div>
+                    <div style='color:#059669;font-size:11px;text-transform:uppercase;'>Avg Reviews</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── RECENT TOPICS + SUBJECT MOMENTUM ────────────────
+    st.markdown("---")
+    recent_col, momentum_col = st.columns([1.1, 1.2])
+
+    with recent_col:
+        st.markdown("#### 🆕 Recently Added Topics")
+        for topic in recent_topics:
+            ret = next((item["retention"] for item in priority if item["id"] == topic["id"]), 0)
+            badge_bg = "#F0FDF4" if ret >= 70 else "#FFFBEB" if ret >= 40 else "#FEF2F2"
+            badge_fg = "#059669" if ret >= 70 else "#D97706" if ret >= 40 else "#DC2626"
+            st.markdown(f"""
+            <div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;
+                        padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(15,27,45,0.05);'>
+                <div style='display:flex;justify-content:space-between;gap:12px;align-items:flex-start;'>
+                    <div>
+                        <div style='font-weight:700;color:#0F1B2D;font-size:0.94rem;'>
+                            {topic["topic_name"]}
+                        </div>
+                        <div style='color:#64748B;font-size:0.8rem;margin-top:4px;'>
+                            {topic["subject"]} · learned on {topic["date_learned"]} · understanding {topic["understanding_score"]}/10
+                        </div>
+                    </div>
+                    <div style='background:{badge_bg};color:{badge_fg};border-radius:999px;
+                                padding:6px 10px;font-size:0.78rem;font-weight:700;white-space:nowrap;'>
+                        {ret}% retained
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with momentum_col:
+        st.markdown("#### 📈 Subject Momentum")
+        subject_stats = {}
+        for item in priority:
+            subject_stats.setdefault(item["subject"], {"count": 0, "retentions": []})
+            subject_stats[item["subject"]]["count"] += 1
+            subject_stats[item["subject"]]["retentions"].append(item["retention"])
+
+        ranked_subjects = sorted(
+            [
+                {
+                    "subject": subject,
+                    "count": stats["count"],
+                    "avg_ret": int(sum(stats["retentions"]) / len(stats["retentions"])),
+                }
+                for subject, stats in subject_stats.items()
+            ],
+            key=lambda x: x["avg_ret"],
+            reverse=True
+        )[:4]
+
+        for item in ranked_subjects:
+            bar_color = "#059669" if item["avg_ret"] >= 70 else "#D97706" if item["avg_ret"] >= 40 else "#DC2626"
+            bar_fade = "#BBF7D0" if item["avg_ret"] >= 70 else "#FDE68A" if item["avg_ret"] >= 40 else "#FECACA"
+            st.markdown(f"""
+            <div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;
+                        padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(15,27,45,0.05);'>
+                <div style='display:flex;justify-content:space-between;align-items:center;gap:10px;'>
+                    <div>
+                        <div style='font-weight:700;color:#0F1B2D;font-size:0.92rem;'>{item["subject"]}</div>
+                        <div style='color:#64748B;font-size:0.8rem;margin-top:4px;'>
+                            {item["count"]} topic{"s" if item["count"] != 1 else ""} tracked
+                        </div>
+                    </div>
+                    <div style='font-weight:700;color:{bar_color};font-size:1rem;'>{item["avg_ret"]}%</div>
+                </div>
+                <div style='margin-top:10px;background:#F1F4F8;border-radius:999px;height:8px;'>
+                    <div style='background:linear-gradient(90deg,{bar_color},{bar_fade});
+                                width:{max(6, item["avg_ret"])}%;height:8px;border-radius:999px;'></div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
