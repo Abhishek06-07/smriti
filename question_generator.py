@@ -132,16 +132,32 @@ def calculate_score(questions, user_answers):
     results = []
     for q in questions:
         qid      = str(q["id"])
-        user_ans = str(user_answers.get(qid, "")).strip()
+        raw_user_ans = user_answers.get(qid, "")
         q_type   = q.get("type", "mcq")
         corr_ans = str(q.get("correct", "")).strip()
+
+        if q_type == "match":
+            user_ans = raw_user_ans if isinstance(raw_user_ans, dict) else {}
+        else:
+            user_ans = str(raw_user_ans).strip()
 
         if q_type in ["fill_blank","one_word"]:
             is_correct = user_ans.lower() == corr_ans.lower()
         elif q_type == "true_false":
             is_correct = user_ans.lower() == corr_ans.lower()
         elif q_type == "match":
-            is_correct = user_ans == "match_submitted"
+            expected_pairs = q.get("pairs", [])
+            is_correct = True
+            if not isinstance(user_ans, dict) or not expected_pairs:
+                is_correct = False
+            else:
+                for pair in expected_pairs:
+                    term = str(pair.get("term", "")).strip()
+                    expected = str(pair.get("match", "")).strip()
+                    chosen = str(user_ans.get(term, "")).strip()
+                    if chosen != expected:
+                        is_correct = False
+                        break
         else:
             is_correct = user_ans == corr_ans
 

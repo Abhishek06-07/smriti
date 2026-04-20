@@ -10,7 +10,8 @@ from database import (
     init_xp_table, add_xp, get_total_xp,
     get_today_xp, get_xp_by_subject,
     get_league, get_xp_history, LEAGUE_THRESHOLDS,
-    sign_up, sign_in, sign_out, get_supabase
+    sign_up, sign_in, sign_out, get_supabase,
+    submit_feedback
 )
 from model import (
     get_retention_curve, current_retention,
@@ -35,6 +36,13 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
 #MainMenu, footer, header   { visibility: hidden; }
 section[data-testid="stSidebar"]  { display: none !important; }
 [data-testid="collapsedControl"]  { display: none !important; }
+.block-container {
+    padding-top: 0 !important;
+    padding-bottom: 2rem !important;
+}
+section.main > div {
+    padding-top: 0 !important;
+}
 
 /* ── APP BACKGROUND ── */
 .stApp { background-color: #F1F4F8 !important; }
@@ -178,6 +186,21 @@ details summary {
     color: #0F1B2D !important;
     font-weight: 500 !important;
     padding: 14px 18px !important;
+    background: #FFFFFF !important;
+}
+details summary:hover,
+details[open] summary,
+details[open] summary:hover {
+    color: #0F1B2D !important;
+    background: #FFFFFF !important;
+}
+details summary * ,
+details[open] summary * {
+    color: #0F1B2D !important;
+}
+details summary::marker,
+details summary::-webkit-details-marker {
+    color: #64748B !important;
 }
 
 /* ── PROGRESS BAR ── */
@@ -199,6 +222,16 @@ p                   { color: #0F1B2D !important; }
 label               { color: #374151 !important; font-weight: 500 !important; }
 h1, h2, h3          { font-family: 'Playfair Display', serif !important; color: #0F1B2D !important; }
 [data-testid="stMarkdownContainer"] p { color: #0F1B2D !important; }
+input[type="radio"] { accent-color: #64748B !important; }
+[data-testid="stRadio"] label {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+[data-testid="stRadio"] label:has(input:checked) {
+    background: transparent !important;
+    color: #0F1B2D !important;
+}
 
 /* ── MISC ── */
 hr { border-color: #E2E8F0 !important; }
@@ -329,10 +362,13 @@ def create_landing_page():
     .landing-hero {
         background: linear-gradient(135deg, #0F1B2D 0%, #1E3A5F 60%, #0F1B2D 100%);
         padding: 80px 40px 60px;
-        margin: -1rem -1rem 0 -1rem;
+        margin: 0 -1rem 0 -1rem;
         text-align: center;
         position: relative;
         overflow: hidden;
+        border-bottom-left-radius: 22px;
+        border-bottom-right-radius: 22px;
+        box-shadow: 0 24px 60px rgba(15,27,45,0.18);
     }
     .landing-hero::before {
         content: '';
@@ -344,14 +380,40 @@ def create_landing_page():
         background: radial-gradient(circle, rgba(201,168,76,0.06) 0%, transparent 60%);
         animation: pulse-bg 4s ease-in-out infinite;
     }
+    .landing-hero::after {
+        content: '';
+        position: absolute;
+        inset: auto -10% -35% auto;
+        width: 380px;
+        height: 380px;
+        border-radius: 50%;
+        background:
+            radial-gradient(circle, rgba(201,168,76,0.12) 0%, rgba(201,168,76,0.04) 38%, transparent 68%);
+        filter: blur(10px);
+        pointer-events: none;
+    }
+    .hero-grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+            linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+        background-size: 42px 42px;
+        mask-image: linear-gradient(to bottom, rgba(0,0,0,0.55), transparent 82%);
+        pointer-events: none;
+    }
+    .hero-content {
+        position: relative;
+        z-index: 2;
+    }
     @keyframes pulse-bg {
         0%, 100% { transform: scale(1); }
         50% { transform: scale(1.1); }
     }
     .hero-badge {
         display: inline-block;
-        background: rgba(201,168,76,0.15);
-        border: 1px solid rgba(201,168,76,0.4);
+        background: rgba(201,168,76,0.12);
+        border: 1px solid rgba(201,168,76,0.32);
         color: #C9A84C;
         padding: 6px 18px;
         border-radius: 999px;
@@ -368,14 +430,31 @@ def create_landing_page():
         color: #FFFFFF;
         line-height: 1.1;
         margin-bottom: 16px;
+        text-shadow: 0 10px 30px rgba(0,0,0,0.22);
     }
     .hero-title span { color: #C9A84C; }
     .hero-tagline {
         font-size: 1.25rem;
-        color: rgba(255,255,255,0.6);
+        color: rgba(255,255,255,0.72);
         max-width: 560px;
         margin: 0 auto 40px;
         line-height: 1.6;
+    }
+    .hero-actions {
+        display: flex;
+        justify-content: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+    }
+    .hero-pill {
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 999px;
+        padding: 10px 16px;
+        color: rgba(255,255,255,0.72);
+        font-size: 0.84rem;
+        backdrop-filter: blur(8px);
     }
     .hero-stats {
         display: flex;
@@ -408,6 +487,22 @@ def create_landing_page():
         box-shadow: 0 2px 12px rgba(15,27,45,0.06);
         transition: transform 0.2s, box-shadow 0.2s;
         border-top: 3px solid;
+        position: relative;
+        overflow: hidden;
+    }
+    .feature-card::after {
+        content: '';
+        position: absolute;
+        inset: auto -30px -30px auto;
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(15,27,45,0.05), transparent 70%);
+        pointer-events: none;
+    }
+    .feature-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 14px 32px rgba(15,27,45,0.10);
     }
     .feature-icon { font-size: 2.2rem; margin-bottom: 14px; }
     .feature-title {
@@ -446,6 +541,18 @@ def create_landing_page():
         padding: 56px 40px;
         text-align: center;
         margin: 40px 0;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 20px 50px rgba(15,27,45,0.14);
+    }
+    .cta-section::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(circle at 20% 20%, rgba(201,168,76,0.12), transparent 30%),
+            radial-gradient(circle at 80% 80%, rgba(255,255,255,0.08), transparent 22%);
+        pointer-events: none;
     }
     .footer {
         text-align: center;
@@ -455,34 +562,63 @@ def create_landing_page():
         border-top: 1px solid #E2E8F0;
         margin-top: 40px;
     }
+    @media (max-width: 768px) {
+        .landing-hero {
+            padding: 64px 22px 44px;
+            border-bottom-left-radius: 18px;
+            border-bottom-right-radius: 18px;
+        }
+        .hero-title {
+            font-size: 2.8rem;
+        }
+        .hero-tagline {
+            font-size: 1rem;
+            margin-bottom: 28px;
+        }
+        .hero-stats {
+            gap: 24px;
+            padding-top: 28px;
+            margin-top: 32px;
+        }
+        .cta-section {
+            padding: 40px 24px;
+        }
+    }
     </style>
     """, unsafe_allow_html=True)
 
     # ── HERO ─────────────────────────────────────────────
     st.markdown("""
     <div class='landing-hero'>
-        <div class='hero-badge'>🧠 AI-Powered Memory Science</div>
-        <div class='hero-title'>Never Forget<br>What You <span>Learn</span></div>
-        <div class='hero-tagline'>
-            Smriti uses Machine Learning to predict exactly when you'll forget —
-            and reminds you to review before it happens.
-        </div>
-        <div class='hero-stats'>
-            <div>
-                <div class='hero-stat-num'>95.4%</div>
-                <div class='hero-stat-label'>Model Accuracy</div>
+        <div class='hero-grid'></div>
+        <div class='hero-content'>
+            <div class='hero-badge'>🧠 AI-Powered Memory Science</div>
+            <div class='hero-title'>Never Forget<br>What You <span>Learn</span></div>
+            <div class='hero-tagline'>
+                Smriti uses Machine Learning to predict exactly when you'll forget —
+                and reminds you to review before it happens.
             </div>
-            <div>
-                <div class='hero-stat-num'>13M+</div>
-                <div class='hero-stat-label'>Training Records</div>
+            <div class='hero-actions'>
+                <div class='hero-pill'>13M+ learning records behind the model</div>
+                <div class='hero-pill'>Bloom's Taxonomy quizzes with real depth</div>
             </div>
-            <div>
-                <div class='hero-stat-num'>6</div>
-                <div class='hero-stat-label'>Bloom's Levels</div>
-            </div>
-            <div>
-                <div class='hero-stat-num'>100%</div>
-                <div class='hero-stat-label'>Free to Use</div>
+            <div class='hero-stats'>
+                <div>
+                    <div class='hero-stat-num'>95.4%</div>
+                    <div class='hero-stat-label'>Model Accuracy</div>
+                </div>
+                <div>
+                    <div class='hero-stat-num'>13M+</div>
+                    <div class='hero-stat-label'>Training Records</div>
+                </div>
+                <div>
+                    <div class='hero-stat-num'>6</div>
+                    <div class='hero-stat-label'>Bloom's Levels</div>
+                </div>
+                <div>
+                    <div class='hero-stat-num'>100%</div>
+                    <div class='hero-stat-label'>Free to Use</div>
+                </div>
             </div>
         </div>
     </div>
@@ -1491,6 +1627,8 @@ if "streak_xp_given" not in st.session_state:
 # ── SESSION STATE ─────────────────────────────────────────
 if "page" not in st.session_state:
     st.session_state.page = "Home"
+if "delete_confirm_topic_id" not in st.session_state:
+    st.session_state.delete_confirm_topic_id = None
 
 # ── TOP NAVIGATION ────────────────────────────────────────
 user_email = st.session_state.user.email
@@ -1507,7 +1645,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # Nav buttons
-c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([1.2, 1, 1, 1, 1, 1, 1, 0.8])
+c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns([0.8, 1, 1, 1, 1, 1, 1, 1, 0.8])
 with c1:
     st.markdown("")
 with c2:
@@ -1523,6 +1661,8 @@ with c6:
 with c7:
     if st.button("🏆 Leaderboard", use_container_width=True, key="nav_leader"): st.session_state.page = "Leaderboard"
 with c8:
+    if st.button("💬 Feedback",    use_container_width=True, key="nav_feedback"): st.session_state.page = "Feedback"
+with c9:
     if st.button("🚪 Logout",      use_container_width=True, key="nav_logout"):
         sign_out()
         st.session_state.user = None
@@ -1574,10 +1714,16 @@ elif page == "Add Topic":
         col1, col2 = st.columns(2)
         with col1:
             topic_name = st.text_input("Topic Name", placeholder="e.g. Photosynthesis, Newton's Laws")
-            subject    = st.selectbox("Subject", [
+            subject_options = [
+                "Select from common subjects",
                 "Biology","Mathematics","Physics","Chemistry",
-                "History","Geography","Computer Science","Other"
-            ])
+                "History","Geography","Computer Science"
+            ]
+            subject_choice = st.selectbox("Choose a common subject (optional)", subject_options)
+            custom_subject = st.text_input(
+                "Subject name",
+                placeholder="e.g. Economics, Political Science, English Literature"
+            )
             from datetime import date as dt_date
             date_learned = st.date_input(
                 "When did you study this topic?",
@@ -1607,7 +1753,15 @@ elif page == "Add Topic":
             if not topic_name.strip():
                 st.error("Please enter a topic name!")
             else:
-                add_topic(topic_name.strip(), subject, understanding_score, str(date_learned), user_id=user_id)
+                final_subject = (
+                    custom_subject.strip()
+                    if custom_subject.strip()
+                    else subject_choice
+                )
+                if final_subject == "Select from common subjects":
+                    st.error("Please select a subject or type your subject name!")
+                    st.stop()
+                add_topic(topic_name.strip(), final_subject, understanding_score, str(date_learned), user_id=user_id)
                 xp_earned = add_xp("add_topic", topic_name.strip(), user_id=user_id)
                 st.success(f"✅ **'{topic_name}'** added! +{xp_earned} XP 🌟")
                 st.balloons()
@@ -1673,6 +1827,22 @@ elif page == "Dashboard":
         c4.metric("Days Since Learned",
                   (pd.Timestamp.today() - pd.Timestamp(selected_topic["date_learned"])).days
                   if selected_topic["date_learned"] else 0)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        delete_col1, delete_col2, delete_col3 = st.columns([1.4, 1, 1.6])
+        with delete_col2:
+            if st.button("🗑️ Delete Topic", use_container_width=True, key=f"dash_delete_{selected_topic['id']}"):
+                st.session_state.delete_confirm_topic_id = selected_topic["id"]
+        with delete_col3:
+            if st.session_state.delete_confirm_topic_id == selected_topic["id"]:
+                if st.button("⚠️ Confirm Delete", use_container_width=True, key=f"dash_confirm_delete_{selected_topic['id']}"):
+                    delete_topic(selected_topic["id"])
+                    st.session_state.delete_confirm_topic_id = None
+                    st.success(f"✅ '{selected_topic['topic_name']}' deleted successfully.")
+                    st.rerun()
+
+        if st.session_state.delete_confirm_topic_id == selected_topic["id"]:
+            st.warning("This will permanently delete the topic and its reviews.")
 
         st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
 
@@ -1856,11 +2026,27 @@ elif page == "Review List":
                     "Rate your recall (1–10)", 1, 10, 7,
                     key=f"slider_{topic['id']}"
                 )
-                if st.button("✅ Mark as Reviewed", key=f"btn_{topic['id']}"):
-                    add_review(topic["id"], review_score * 10, user_id=user_id)
-                    xp = add_xp("review_topic", topic["topic_name"], user_id=user_id)
-                    st.success(f"✅ Reviewed! +{xp} XP earned 🌟")
-                    st.rerun()
+                action_col1, action_col2, action_col3 = st.columns(3)
+                with action_col1:
+                    if st.button("✅ Mark as Reviewed", key=f"btn_{topic['id']}"):
+                        add_review(topic["id"], review_score * 10, user_id=user_id)
+                        xp = add_xp("review_topic", topic["topic_name"], user_id=user_id)
+                        st.session_state.delete_confirm_topic_id = None
+                        st.success(f"✅ Reviewed! +{xp} XP earned 🌟")
+                        st.rerun()
+                with action_col2:
+                    if st.button("🗑️ Delete", key=f"delete_{topic['id']}"):
+                        st.session_state.delete_confirm_topic_id = topic["id"]
+                with action_col3:
+                    if st.session_state.delete_confirm_topic_id == topic["id"]:
+                        if st.button("⚠️ Confirm Delete", key=f"confirm_delete_{topic['id']}"):
+                            delete_topic(topic["id"])
+                            st.session_state.delete_confirm_topic_id = None
+                            st.success(f"✅ '{topic['topic_name']}' deleted successfully.")
+                            st.rerun()
+
+                if st.session_state.delete_confirm_topic_id == topic["id"]:
+                    st.warning("This will permanently delete the topic and all related reviews.")
 
 # ════════════════════════════════════════════════════════
 # PAGE 5 — QUIZ (Bloom's Taxonomy)
@@ -2038,17 +2224,82 @@ elif page == "Quiz":
 
             for q in st.session_state.quiz_questions:
                 st.markdown(f"**Q{q['id']}. {q['question']}**")
-                options = q["options"]
-                choice  = st.radio(
-                    f"Q{q['id']}",
-                    options          = list(options.keys()),
-                    format_func      = lambda k, opts=options: f"{k}.  {opts[k]}",
-                    key              = f"q_{q['id']}",
-                    index            = None,
-                    label_visibility = "collapsed"
-                )
-                if choice:
-                    st.session_state.quiz_answers[str(q["id"])] = choice
+                q_type = q.get("type", "mcq")
+
+                if q_type == "mcq":
+                    options = q.get("options", {})
+                    if options:
+                        choice  = st.radio(
+                            f"Q{q['id']}",
+                            options          = list(options.keys()),
+                            format_func      = lambda k, opts=options: f"{k}.  {opts[k]}",
+                            key              = f"q_{q['id']}",
+                            index            = None,
+                            label_visibility = "collapsed"
+                        )
+                        if choice:
+                            st.session_state.quiz_answers[str(q["id"])] = choice
+                    else:
+                        st.warning("This MCQ is missing options, so it cannot be answered right now.")
+
+                elif q_type == "true_false":
+                    choice = st.radio(
+                        f"Q{q['id']}",
+                        options=["True", "False"],
+                        key=f"q_{q['id']}",
+                        index=None,
+                        label_visibility="collapsed"
+                    )
+                    if choice:
+                        st.session_state.quiz_answers[str(q["id"])] = choice
+
+                elif q_type in ["fill_blank", "one_word"]:
+                    answer = st.text_input(
+                        f"Q{q['id']} answer",
+                        key=f"q_{q['id']}",
+                        placeholder="Type your answer here",
+                        label_visibility="collapsed"
+                    )
+                    if answer.strip():
+                        st.session_state.quiz_answers[str(q["id"])] = answer.strip()
+                    else:
+                        st.session_state.quiz_answers.pop(str(q["id"]), None)
+
+                elif q_type == "match":
+                    pairs = q.get("pairs", [])
+                    if pairs:
+                        st.caption("Match each term with the correct option.")
+                        match_choices = [str(p.get("match", "")).strip() for p in pairs if str(p.get("match", "")).strip()]
+                        user_match_answers = {}
+                        for idx, pair in enumerate(pairs):
+                            term = str(pair.get("term", "")).strip()
+                            if not term:
+                                continue
+                            selected_match = st.selectbox(
+                                f"{term}",
+                                options=["Select"] + match_choices,
+                                key=f"q_{q['id']}_pair_{idx}"
+                            )
+                            if selected_match != "Select":
+                                user_match_answers[term] = selected_match
+                        if len(user_match_answers) == len([p for p in pairs if str(p.get("term", "")).strip()]):
+                            st.session_state.quiz_answers[str(q["id"])] = user_match_answers
+                        else:
+                            st.session_state.quiz_answers.pop(str(q["id"]), None)
+                    else:
+                        st.warning("This match question is missing pairs, so it cannot be answered right now.")
+
+                else:
+                    answer = st.text_input(
+                        f"Q{q['id']} answer",
+                        key=f"q_{q['id']}",
+                        placeholder="Type your answer here",
+                        label_visibility="collapsed"
+                    )
+                    if answer.strip():
+                        st.session_state.quiz_answers[str(q["id"])] = answer.strip()
+                    else:
+                        st.session_state.quiz_answers.pop(str(q["id"]), None)
                 st.markdown("")
 
             all_answered = len(st.session_state.quiz_answers) == len(st.session_state.quiz_questions)
@@ -2135,15 +2386,48 @@ elif page == "Quiz":
                 icon = "✅" if r["is_correct"] else "❌"
                 with st.expander(f"{icon} Q{r['id']}. {r['question']}"):
                     c1, c2 = st.columns(2)
+                    q_type = r.get("type", "mcq")
+
+                    if q_type == "mcq":
+                        user_answer_label = (
+                            f"{r['user_answer']}. {r['options'].get(r['user_answer'], '')}"
+                            if r["user_answer"] else "Not answered"
+                        )
+                        correct_answer_label = (
+                            f"{r['correct_ans']}. {r['options'].get(r['correct_ans'], '')}"
+                            if r["correct_ans"] else "-"
+                        )
+                    elif q_type == "true_false":
+                        user_answer_label = r["user_answer"] if r["user_answer"] else "Not answered"
+                        correct_answer_label = r["correct_ans"] if r["correct_ans"] else "-"
+                    elif q_type in ["fill_blank", "one_word"]:
+                        user_answer_label = r["user_answer"] if r["user_answer"] else "Not answered"
+                        correct_answer_label = r["correct_ans"] if r["correct_ans"] else "-"
+                    elif q_type == "match":
+                        if isinstance(r["user_answer"], dict) and r["user_answer"]:
+                            user_answer_label = ", ".join(
+                                [f"{term} -> {match}" for term, match in r["user_answer"].items()]
+                            )
+                        else:
+                            user_answer_label = "Not answered"
+                        if r.get("pairs"):
+                            correct_answer_label = ", ".join(
+                                [f"{pair.get('term', '')} -> {pair.get('match', '')}" for pair in r["pairs"]]
+                            )
+                        else:
+                            correct_answer_label = "-"
+                    else:
+                        user_answer_label = r["user_answer"] if r["user_answer"] else "Not answered"
+                        correct_answer_label = r["correct_ans"] if r["correct_ans"] else "-"
+
                     with c1:
-                        ans_text = r['options'].get(r['user_answer'], 'Not answered')
-                        color    = "#059669" if r["is_correct"] else "#DC2626"
                         st.markdown(
-                            f"**Your answer:** <span style='color:{color}'>{r['user_answer']}. {ans_text}</span>",
+                            f"**Your answer:** <span style='color:#0F1B2D'>{user_answer_label}</span>",
                             unsafe_allow_html=True
                         )
                     with c2:
-                        st.markdown(f"**Correct:** {r['correct_ans']}. {r['options'].get(r['correct_ans'], '')}")
+                        st.markdown(f"**Correct:** {correct_answer_label}")
+                    st.caption("Result: Correct" if r["is_correct"] else "Result: Incorrect")
                     if r.get("bloom_keyword"):
                         st.caption(f"Bloom's keyword: {r['bloom_keyword']}")
                     if r["explanation"]:
@@ -2448,3 +2732,122 @@ elif page == "Leaderboard":
                     <span style='color:#C9A84C;font-weight:700;font-size:0.9rem;'>{xp}</span>
                 </div>
                 """, unsafe_allow_html=True)
+
+# ════════════════════════════════════════════════════════
+# PAGE 7 — FEEDBACK
+# ════════════════════════════════════════════════════════
+elif page == "Feedback":
+    st.markdown("""
+    <div class='page-header'>
+        <div class='page-title'>Feedback</div>
+        <div class='page-subtitle'>Tell us what feels great, what breaks, and what Smriti should improve next</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    topics = load_topics()
+    total_xp = get_total_xp(user_id=user_id)
+
+    intro_c1, intro_c2 = st.columns([1.4, 1])
+    with intro_c1:
+        st.markdown("""
+        <div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;
+                    padding:20px 24px;box-shadow:0 2px 8px rgba(15,27,45,0.05);'>
+            <div style='font-size:10px;color:#64748B;text-transform:uppercase;
+                        letter-spacing:0.12em;font-weight:600;margin-bottom:8px;'>
+                Why this matters
+            </div>
+            <div style='font-weight:700;color:#0F1B2D;font-size:1.05rem;margin-bottom:8px;'>
+                Your feedback shapes the next version of Smriti
+            </div>
+            <div style='color:#64748B;font-size:0.9rem;line-height:1.7;'>
+                Share bugs, confusing flows, missing features, or even one small thing you loved.
+                Short and honest feedback is perfect.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    with intro_c2:
+        st.markdown(f"""
+        <div style='background:linear-gradient(135deg,#0F1B2D,#1E3A5F);
+                    border-radius:14px;padding:20px 24px;color:#FFFFFF;
+                    border:1px solid rgba(201,168,76,0.24);'>
+            <div style='color:rgba(255,255,255,0.45);font-size:10px;text-transform:uppercase;
+                        letter-spacing:0.12em;font-weight:600;margin-bottom:10px;'>
+                Your Usage Snapshot
+            </div>
+            <div style='display:flex;justify-content:space-between;gap:16px;'>
+                <div>
+                    <div style='font-family:Georgia,serif;font-size:1.8rem;font-weight:700;color:#C9A84C;'>{len(topics)}</div>
+                    <div style='font-size:11px;color:rgba(255,255,255,0.45);'>Topics</div>
+                </div>
+                <div>
+                    <div style='font-family:Georgia,serif;font-size:1.8rem;font-weight:700;color:#22C55E;'>{total_xp}</div>
+                    <div style='font-size:11px;color:rgba(255,255,255,0.45);'>XP</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
+
+    with st.form("feedback_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            feedback_category = st.selectbox(
+                "What kind of feedback is this?",
+                [
+                    "General Feedback",
+                    "Bug Report",
+                    "Feature Request",
+                    "UI / Design",
+                    "Quiz Quality",
+                    "Performance Issue",
+                ],
+            )
+            rating = st.slider("Overall experience", 1, 5, 4, help="1 = poor, 5 = excellent")
+            active_context = st.selectbox(
+                "Which area were you using?",
+                ["Home", "Add Topic", "Dashboard", "Review List", "Quiz", "Leaderboard", "Overall App"],
+                index=6,
+            )
+        with col2:
+            st.info(
+                "Tip: the most useful feedback includes what you expected, what happened, and what should improve."
+            )
+            st.markdown(
+                f"""
+                <div style='background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;
+                            padding:14px 16px;color:#64748B;font-size:0.85rem;line-height:1.6;'>
+                    This feedback will be saved as <strong style='color:#0F1B2D;'>"{feedback_category}"</strong>
+                    for the <strong style='color:#0F1B2D;'>"{active_context}"</strong> area.
+                    Add the context directly in your message so it is easier to review later.
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        message = st.text_area(
+            "What happened or what would you like to share?",
+            height=180,
+            placeholder="Example: In Quiz, the questions were good, but I want an easier way to retry only wrong answers.",
+        )
+
+        submitted = st.form_submit_button("Send Feedback", use_container_width=True)
+
+        if submitted:
+            if len(message.strip()) < 10:
+                st.error("Please write at least a short feedback message so it is actionable.")
+            else:
+                ok, error = submit_feedback(
+                    category=feedback_category,
+                    rating=rating,
+                    message=f"[{active_context}] {message.strip()}",
+                    user_id=user_id,
+                )
+                if ok:
+                    st.success("✅ Feedback sent successfully. Thank you for helping improve Smriti.")
+                    st.balloons()
+                else:
+                    st.error(
+                        "Feedback could not be saved to Supabase. Please recheck your feedback table columns and policies."
+                    )
+                    st.caption(f"Technical details: {error}")

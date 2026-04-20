@@ -270,3 +270,23 @@ def get_xp_history(days=7, user_id=None):
     for r in res.data:
         daily[r["earned_date"]] += r["xp_earned"]
     return sorted(daily.items(), reverse=True)[:days]
+
+def submit_feedback(
+    category,
+    rating,
+    message,
+    user_id=None,
+):
+    try:
+        sb = get_supabase()
+        payload = {
+            "category": category,
+            "rating": int(rating),
+            "message": message.strip(),
+            "user_id": user_id,
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        sb.table("feedback").insert(payload).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
