@@ -11,7 +11,8 @@ from database import (
     get_today_xp, get_xp_by_subject,
     get_league, get_xp_history, LEAGUE_THRESHOLDS,
     sign_up, sign_in, sign_out, get_supabase,
-    submit_feedback
+    submit_feedback, save_quiz_mistakes, get_mistake_book,
+    snooze_mistake, mark_mistake_mastered, delete_mistake
 )
 from model import (
     get_retention_curve, current_retention,
@@ -1867,7 +1868,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # Nav buttons
-c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns([0.8, 1, 1, 1, 1, 1, 1, 1, 0.8])
+c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11 = st.columns([0.4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.7])
 with c1:
     st.markdown("")
 with c2:
@@ -1883,8 +1884,12 @@ with c6:
 with c7:
     if st.button("🏆 Leaderboard", use_container_width=True, key="nav_leader"): st.session_state.page = "Leaderboard"
 with c8:
-    if st.button("💬 Feedback",    use_container_width=True, key="nav_feedback"): st.session_state.page = "Feedback"
+    if st.button("📓 Mistakes",    use_container_width=True, key="nav_mistakes"): st.session_state.page = "Mistake Book"
 with c9:
+    if st.button("📄 Report",      use_container_width=True, key="nav_report"): st.session_state.page = "Progress Report"
+with c10:
+    if st.button("💬 Feedback",    use_container_width=True, key="nav_feedback"): st.session_state.page = "Feedback"
+with c11:
     if st.button("🚪 Logout",      use_container_width=True, key="nav_logout"):
         sign_out()
         st.session_state.user = None
@@ -1914,6 +1919,51 @@ def chart_layout(title=""):
     )
 
 CHART_COLORS = ["#0F1B2D","#1E3A5F","#C9A84C","#2D6A4F","#8B1A1A","#374151"]
+
+def get_subject_report(priority):
+    if not priority:
+        return None, None, []
+
+    subject_stats = {}
+    for item in priority:
+        subject_stats.setdefault(item["subject"], {"retentions": [], "topics": 0})
+        subject_stats[item["subject"]]["retentions"].append(item["retention"])
+        subject_stats[item["subject"]]["topics"] += 1
+
+    subject_rows = []
+    for subject, stats in subject_stats.items():
+        avg_ret = int(sum(stats["retentions"]) / len(stats["retentions"]))
+        subject_rows.append({
+            "subject": subject,
+            "avg_ret": avg_ret,
+            "topics": stats["topics"],
+        })
+
+    subject_rows = sorted(subject_rows, key=lambda x: x["avg_ret"], reverse=True)
+    best_subject = subject_rows[0]
+    weakest_subject = subject_rows[-1]
+    return best_subject, weakest_subject, subject_rows
+
+def format_mistake_answer(result_item):
+    q_type = result_item.get("type", "mcq")
+
+    if q_type == "mcq":
+        options = result_item.get("options", {})
+        correct_key = str(result_item.get("correct_ans", "")).strip()
+        if correct_key and correct_key in options:
+            return f"{correct_key}. {options.get(correct_key, '')}".strip()
+        return correct_key
+
+    if q_type == "match":
+        pairs = result_item.get("pairs", [])
+        if pairs:
+            return ", ".join(
+                f"{pair.get('term', '').strip()} -> {pair.get('match', '').strip()}"
+                for pair in pairs
+            )
+        return str(result_item.get("correct_ans", "")).strip()
+
+    return str(result_item.get("correct_ans", "")).strip()
 
 # ════════════════════════════════════════════════════════
 # PAGE 1 — HOME (Modular — see dashboard_home.py)
@@ -2582,6 +2632,36 @@ elif page == "Quiz":
             boost = quiz_to_retention_boost(score, st.session_state.selected_bloom)
             add_review(selected["id"], boost * 10, user_id=user_id)
 
+            # Save wrong answers into mistake book
+            mistakes_to_save = []
+            for item in result["results"]:
+                if item["is_correct"]:
+                    continue
+                user_answer = item.get("user_answer", "")
+                if isinstance(user_answer, dict):
+                    user_answer = ", ".join(
+                        f"{term} -> {match}" for term, match in user_answer.items()
+                    )
+                mistakes_to_save.append({
+                    "question": item.get("question", ""),
+                    "type": item.get("type", "mcq"),
+                    "user_answer": str(user_answer).strip() or "Not answered",
+                    "correct_answer": format_mistake_answer(item),
+                    "explanation": item.get("explanation", ""),
+                })
+
+            saved_mistakes = 0
+            mistake_error = None
+            if mistakes_to_save:
+                saved_mistakes, mistake_error = save_quiz_mistakes(
+                    topic_id=selected["id"],
+                    topic_name=selected["topic_name"],
+                    subject=selected["subject"],
+                    bloom_level=st.session_state.selected_bloom,
+                    mistakes=mistakes_to_save,
+                    user_id=user_id,
+                )
+
             # Add XP for quiz completion
             quiz_activity = f"quiz_l{st.session_state.selected_bloom}"
             xp_earned     = add_xp(quiz_activity, selected["topic_name"], user_id=user_id)
@@ -2592,6 +2672,12 @@ elif page == "Quiz":
                 st.success(f"✅ Retention updated! +{xp_earned} XP earned (including perfect score bonus!) 🌟")
             else:
                 st.success(f"✅ Retention updated! +{xp_earned} XP earned! Bloom's L{st.session_state.selected_bloom} recorded.")
+
+            if saved_mistakes:
+                st.info(f"📓 {saved_mistakes} wrong answer(s) saved to your Mistake Book for retry later.")
+            elif mistake_error:
+                st.warning("Mistake Book could not be saved right now. Please check the `mistake_book` table in Supabase.")
+                st.caption(f"Technical details: {mistake_error}")
 
             # Update best bloom level achieved
             if score >= 70:
@@ -2693,7 +2779,244 @@ elif page == "Quiz":
                     st.rerun()
 
 # ════════════════════════════════════════════════════════
-# PAGE 6 — LEADERBOARD
+# PAGE 6 — MISTAKE BOOK
+# ════════════════════════════════════════════════════════
+elif page == "Mistake Book":
+    st.markdown("""
+    <div class='page-header'>
+        <div class='page-title'>Mistake Book</div>
+        <div class='page-subtitle'>Every wrong answer, saved with explanation so you can retry and improve</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    mistakes, error = get_mistake_book(user_id=user_id)
+
+    if error:
+        st.error("Mistake Book could not be loaded from Supabase.")
+        st.caption("Create a `mistake_book` table and verify your policies/columns, then refresh the app.")
+        st.caption(f"Technical details: {error}")
+    elif not mistakes:
+        st.info("No saved mistakes yet. Take a quiz and any incorrect answers will appear here automatically.")
+    else:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        due_now = [m for m in mistakes if (m.get("review_after") or today_str) <= today_str]
+        later = [m for m in mistakes if (m.get("review_after") or today_str) > today_str]
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("📓 Total Mistakes", len(mistakes))
+        c2.metric("🔥 Due Now", len(due_now))
+        c3.metric("⏳ Retry Later", len(later))
+        c4.metric("🎯 Subjects", len(set(m.get("subject", "General") for m in mistakes)))
+
+        st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
+
+        if due_now:
+            st.markdown("### 🔥 Retry Today")
+            for item in due_now:
+                with st.expander(
+                    f"❌ {item.get('topic_name', 'Topic')} · L{item.get('bloom_level', 1)} · {item.get('subject', 'General')}"
+                ):
+                    st.markdown(f"**Question:** {item.get('question_text', '-')}")
+                    st.markdown(f"**Your answer:** {item.get('user_answer', 'Not answered')}")
+                    st.markdown(f"**Correct answer:** {item.get('correct_answer', '-')}")
+                    if item.get("explanation"):
+                        st.info(f"💡 {item['explanation']}")
+
+                    btn1, btn2, btn3 = st.columns(3)
+                    with btn1:
+                        if st.button("⏳ Retry Later", key=f"snooze_due_{item['id']}", use_container_width=True):
+                            ok, action_error = snooze_mistake(item["id"])
+                            if ok:
+                                st.success("Moved to retry later.")
+                                st.rerun()
+                            st.error(action_error)
+                    with btn2:
+                        if st.button("✅ Mark Mastered", key=f"master_due_{item['id']}", use_container_width=True):
+                            ok, action_error = mark_mistake_mastered(item["id"])
+                            if ok:
+                                st.success("Marked as mastered.")
+                                st.rerun()
+                            st.error(action_error)
+                    with btn3:
+                        if st.button("🗑️ Remove", key=f"delete_due_{item['id']}", use_container_width=True):
+                            ok, action_error = delete_mistake(item["id"])
+                            if ok:
+                                st.success("Removed from mistake book.")
+                                st.rerun()
+                            st.error(action_error)
+
+        if later:
+            st.markdown("### ⏳ Scheduled For Later")
+            for item in later:
+                with st.expander(
+                    f"🕒 {item.get('topic_name', 'Topic')} · review after {item.get('review_after', '-')}"
+                ):
+                    st.markdown(f"**Question:** {item.get('question_text', '-')}")
+                    st.markdown(f"**Correct answer:** {item.get('correct_answer', '-')}")
+                    if item.get("explanation"):
+                        st.info(f"💡 {item['explanation']}")
+                    st.caption(
+                        f"Bloom's L{item.get('bloom_level', 1)} · {item.get('subject', 'General')} · Snoozed {item.get('retry_count', 0)} time(s)"
+                    )
+
+                    btn1, btn2 = st.columns(2)
+                    with btn1:
+                        if st.button("✅ Mark Mastered", key=f"master_later_{item['id']}", use_container_width=True):
+                            ok, action_error = mark_mistake_mastered(item["id"])
+                            if ok:
+                                st.success("Marked as mastered.")
+                                st.rerun()
+                            st.error(action_error)
+                    with btn2:
+                        if st.button("🗑️ Remove", key=f"delete_later_{item['id']}", use_container_width=True):
+                            ok, action_error = delete_mistake(item["id"])
+                            if ok:
+                                st.success("Removed from mistake book.")
+                                st.rerun()
+                            st.error(action_error)
+
+# ════════════════════════════════════════════════════════
+# PAGE 7 — PROGRESS REPORT
+# ════════════════════════════════════════════════════════
+elif page == "Progress Report":
+
+    st.markdown("""
+    <div class='page-header'>
+        <div class='page-title'>Progress Report</div>
+        <div class='page-subtitle'>A clean summary of your learning progress, ready to screenshot and share</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    topics = load_topics()
+    total_xp = get_total_xp(user_id=user_id)
+    streak = get_streak(user_id=user_id)
+
+    if not topics:
+        st.info("No topics yet. Add some topics first and your progress report will appear here.")
+    else:
+        priority = get_review_priority(topics)
+        avg_ret = int(sum(t["retention"] for t in priority) / len(priority)) if priority else 0
+        best_subject, weakest_subject, subject_rows = get_subject_report(priority)
+
+        report_color = "#059669" if avg_ret >= 70 else "#D97706" if avg_ret >= 40 else "#DC2626"
+        report_status = (
+            "Memory health is excellent" if avg_ret >= 70 else
+            "Memory health is improving" if avg_ret >= 40 else
+            "Memory health needs attention"
+        )
+
+        st.markdown(f"""
+        <div style='background:linear-gradient(135deg,#0F1B2D,#1E3A5F);
+                    border-radius:20px;padding:28px 30px;margin-bottom:24px;
+                    border:1px solid rgba(201,168,76,0.24);box-shadow:0 18px 50px rgba(15,27,45,0.14);'>
+            <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;'>
+                <div>
+                    <div style='font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;
+                                letter-spacing:0.12em;font-weight:600;margin-bottom:8px;'>
+                        Smriti Shareable Snapshot
+                    </div>
+                    <div style='font-family:Georgia,serif;font-size:2rem;font-weight:700;color:#FFFFFF;'>
+                        Your learning progress at a glance
+                    </div>
+                    <div style='color:rgba(255,255,255,0.62);font-size:0.92rem;margin-top:10px;max-width:620px;line-height:1.7;'>
+                        {report_status}. You are tracking <strong style='color:#FFFFFF;'>{len(topics)}</strong> topic(s),
+                        holding an average retention of <strong style='color:{report_color};'>{avg_ret}%</strong>,
+                        and building a <strong style='color:#C9A84C;'>{streak}-day streak</strong>.
+                    </div>
+                </div>
+                <div style='background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.08);
+                            border-radius:16px;padding:18px 20px;min-width:220px;'>
+                    <div style='color:rgba(255,255,255,0.45);font-size:10px;text-transform:uppercase;
+                                letter-spacing:0.1em;'>Current Status</div>
+                    <div style='font-size:2.3rem;font-weight:700;color:{report_color};font-family:Georgia,serif;margin-top:4px;'>
+                        {avg_ret}%
+                    </div>
+                    <div style='color:rgba(255,255,255,0.62);font-size:0.84rem;'>Average Retention</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("📚 Total Topics", len(topics))
+        m2.metric("🧠 Average Retention", f"{avg_ret}%")
+        m3.metric("🔥 Study Streak", f"{streak} days")
+        m4.metric("🏆 Total XP", total_xp)
+
+        st.markdown("<div class='gold-line'></div>", unsafe_allow_html=True)
+
+        top_col, weak_col = st.columns(2)
+        with top_col:
+            st.markdown(f"""
+            <div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:16px;
+                        padding:20px 22px;height:100%;box-shadow:0 2px 8px rgba(15,27,45,0.05);'>
+                <div style='font-size:10px;color:#059669;text-transform:uppercase;letter-spacing:0.12em;font-weight:600;'>
+                    Best Subject
+                </div>
+                <div style='font-family:Georgia,serif;font-size:1.8rem;font-weight:700;color:#166534;margin-top:8px;'>
+                    {best_subject["subject"]}
+                </div>
+                <div style='color:#15803D;font-size:0.92rem;margin-top:6px;line-height:1.6;'>
+                    Average retention: <strong>{best_subject["avg_ret"]}%</strong><br/>
+                    Topics tracked: <strong>{best_subject["topics"]}</strong>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with weak_col:
+            weak_bg = "#FFFBEB" if weakest_subject["avg_ret"] >= 40 else "#FEF2F2"
+            weak_border = "#FDE68A" if weakest_subject["avg_ret"] >= 40 else "#FECACA"
+            weak_text = "#A16207" if weakest_subject["avg_ret"] >= 40 else "#991B1B"
+            st.markdown(f"""
+            <div style='background:{weak_bg};border:1px solid {weak_border};border-radius:16px;
+                        padding:20px 22px;height:100%;box-shadow:0 2px 8px rgba(15,27,45,0.05);'>
+                <div style='font-size:10px;color:{weak_text};text-transform:uppercase;letter-spacing:0.12em;font-weight:600;'>
+                    Weakest Subject
+                </div>
+                <div style='font-family:Georgia,serif;font-size:1.8rem;font-weight:700;color:{weak_text};margin-top:8px;'>
+                    {weakest_subject["subject"]}
+                </div>
+                <div style='color:{weak_text};font-size:0.92rem;margin-top:6px;line-height:1.6;'>
+                    Average retention: <strong>{weakest_subject["avg_ret"]}%</strong><br/>
+                    Topics tracked: <strong>{weakest_subject["topics"]}</strong>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("### 📊 Subject Performance Summary")
+
+        subject_cols = st.columns(min(3, len(subject_rows)))
+        for idx, item in enumerate(subject_rows[:3]):
+            with subject_cols[idx]:
+                tone = "#059669" if item["avg_ret"] >= 70 else "#D97706" if item["avg_ret"] >= 40 else "#DC2626"
+                tone_bg = "#F0FDF4" if item["avg_ret"] >= 70 else "#FFFBEB" if item["avg_ret"] >= 40 else "#FEF2F2"
+                st.markdown(f"""
+                <div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;
+                            padding:18px;height:100%;box-shadow:0 2px 8px rgba(15,27,45,0.05);border-top:3px solid {tone};'>
+                    <div style='font-weight:700;color:#0F1B2D;font-size:1rem;'>{item["subject"]}</div>
+                    <div style='display:inline-block;background:{tone_bg};color:{tone};
+                                border-radius:999px;padding:6px 10px;font-size:0.78rem;font-weight:700;margin-top:10px;'>
+                        {item["avg_ret"]}% retained
+                    </div>
+                    <div style='color:#64748B;font-size:0.84rem;margin-top:12px;line-height:1.6;'>
+                        {item["topics"]} topic{"s" if item["topics"] != 1 else ""} tracked in this subject.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("### 📝 Share Text")
+        share_text = (
+            f"I am tracking {len(topics)} topics on Smriti with {avg_ret}% average retention, "
+            f"a {streak}-day study streak, and {total_xp} XP. "
+            f"My best subject is {best_subject['subject']} and the subject needing the most attention is {weakest_subject['subject']}."
+        )
+        st.code(share_text, language="text")
+        st.caption("This block is ready to copy or use in a screenshot-friendly progress update.")
+
+# ════════════════════════════════════════════════════════
+# PAGE 8 — LEADERBOARD
 # ════════════════════════════════════════════════════════
 elif page == "Leaderboard":
 
@@ -2956,7 +3279,7 @@ elif page == "Leaderboard":
                 """, unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════
-# PAGE 7 — FEEDBACK
+# PAGE 9 — FEEDBACK
 # ════════════════════════════════════════════════════════
 elif page == "Feedback":
     st.markdown("""

@@ -295,3 +295,91 @@ def submit_feedback(
         return True, None
     except Exception as e:
         return False, str(e)
+
+def save_quiz_mistakes(
+    topic_id,
+    topic_name,
+    subject,
+    bloom_level,
+    mistakes,
+    user_id=None,
+):
+    try:
+        if not mistakes:
+            return 0, None
+
+        sb = get_supabase()
+        today = datetime.now().strftime("%Y-%m-%d")
+        now = datetime.utcnow().isoformat()
+        payload = []
+
+        for item in mistakes:
+            payload.append({
+                "topic_id": topic_id,
+                "topic_name": topic_name,
+                "subject": subject,
+                "bloom_level": int(bloom_level),
+                "question_text": item.get("question", "").strip(),
+                "question_type": item.get("type", "mcq"),
+                "user_answer": str(item.get("user_answer", "")).strip(),
+                "correct_answer": str(item.get("correct_answer", "")).strip(),
+                "explanation": item.get("explanation", "").strip(),
+                "user_id": user_id,
+                "status": "open",
+                "review_after": today,
+                "retry_count": 0,
+                "created_at": now,
+                "updated_at": now,
+            })
+
+        sb.table("mistake_book").insert(payload).execute()
+        return len(payload), None
+    except Exception as e:
+        return 0, str(e)
+
+def get_mistake_book(user_id=None, include_resolved=False):
+    try:
+        sb = get_supabase()
+        q = sb.table("mistake_book").select("*").order("review_after").order("created_at", desc=True)
+        if user_id:
+            q = q.eq("user_id", user_id)
+        if not include_resolved:
+            q = q.neq("status", "mastered")
+        res = q.execute()
+        return res.data or [], None
+    except Exception as e:
+        return [], str(e)
+
+def snooze_mistake(mistake_id, retry_days=2):
+    try:
+        sb = get_supabase()
+        res = sb.table("mistake_book").select("retry_count").eq("id", mistake_id).limit(1).execute()
+        current_retry = res.data[0]["retry_count"] if res.data else 0
+        next_review = (date.today() + timedelta(days=retry_days)).isoformat()
+        sb.table("mistake_book").update({
+            "review_after": next_review,
+            "retry_count": current_retry + 1,
+            "updated_at": datetime.utcnow().isoformat(),
+        }).eq("id", mistake_id).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+def mark_mistake_mastered(mistake_id):
+    try:
+        sb = get_supabase()
+        sb.table("mistake_book").update({
+            "status": "mastered",
+            "updated_at": datetime.utcnow().isoformat(),
+        }).eq("id", mistake_id).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+def delete_mistake(mistake_id):
+    try:
+        sb = get_supabase()
+        sb.table("mistake_book").delete().eq("id", mistake_id).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
