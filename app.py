@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+import os
 from datetime import datetime
 from database import (
     init_db, add_topic, get_all_topics, add_review, delete_topic,
@@ -14,10 +15,10 @@ from database import (
     submit_feedback, save_quiz_mistakes, get_mistake_book,
     snooze_mistake, mark_mistake_mastered, delete_mistake
 )
-from model import (
+from models.model import (
     get_retention_curve, current_retention,
     classify_topic, get_review_priority,
-    predict_future_retention, cluster_topics
+    predict_future_retention, cluster_topics, get_model_status
 )
 
 st.set_page_config(
@@ -172,6 +173,78 @@ section.main > div {
     display: flex;
     align-items: center;
     justify-content: flex-end;
+}
+.site-footer {
+    background: #FFFFFF;
+    border-top: 1px solid #E2E8F0;
+    margin: 48px -1rem -2rem -1rem;
+    padding: 44px 52px 28px;
+}
+.site-footer-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 1.2fr 1fr 1fr;
+    gap: 42px;
+}
+.site-footer-title {
+    color: #94A3B8;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 600;
+    margin-bottom: 18px;
+}
+.site-footer-item {
+    color: #0F172A;
+    font-size: 0.98rem;
+    margin-bottom: 14px;
+    line-height: 1.5;
+}
+.site-footer-item a {
+    color: #0F172A !important;
+    text-decoration: none;
+}
+.site-footer-item a:hover {
+    color: #1E3A5F !important;
+}
+.site-footer-bottom {
+    border-top: 1px solid #E2E8F0;
+    margin-top: 28px;
+    padding-top: 20px;
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+}
+.site-footer-copy {
+    color: #94A3B8;
+    font-size: 0.92rem;
+}
+.site-footer-links {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+}
+.site-footer-links a {
+    color: #94A3B8 !important;
+    text-decoration: none;
+    font-size: 0.92rem;
+}
+.site-footer-links a:hover {
+    color: #64748B !important;
+}
+@media (max-width: 900px) {
+    .site-footer {
+        padding: 36px 22px 24px;
+    }
+    .site-footer-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 26px;
+    }
+}
+@media (max-width: 640px) {
+    .site-footer-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ── PAGE HEADER ── */
@@ -1046,6 +1119,14 @@ SUMMARY_MAP = {
     "comp_other":   ("Competitive Exam Aspirant","📚", "#DC2626"),
 }
 
+def get_summary_info(user_detail):
+    return SUMMARY_MAP.get(user_detail, ("Student", "👤", "#6366F1"))
+
+def normalize_user_summary(value):
+    if isinstance(value, tuple):
+        return value[0]
+    return value or "Student"
+
 # ── AI SUGGESTIONS based on profile ──────────────────────
 def get_ai_suggestion(user_detail):
     suggestions = {
@@ -1095,7 +1176,7 @@ def create_onboarding(user_id):
     # ── RESULT PAGE ───────────────────────────────────────
     if st.session_state.ob_done:
         detail           = st.session_state.ob_answers.get("user_detail", "")
-        summary, emoji, color = SUMMARY_MAP.get(detail, ("Student", "👤", "#6366F1"))
+        summary, emoji, color = get_summary_info(detail)
         ai_tip           = get_ai_suggestion(detail)
 
         st.markdown(f"""
@@ -1538,6 +1619,53 @@ def render_bloom_nodes():
     st.markdown(nodes_html, unsafe_allow_html=True)
     st.caption(f"Currently at L{best_bloom} — Take a quiz to advance! 🎯")
 
+def render_site_footer():
+    st.markdown("""
+    <div class='site-footer'>
+        <div class='site-footer-grid'>
+            <div>
+                <div class='site-footer-title'>Site</div>
+                <div class='site-footer-item'>Home</div>
+                <div class='site-footer-item'>Add Topic</div>
+                <div class='site-footer-item'>Review List</div>
+                <div class='site-footer-item'>Quiz</div>
+                <div class='site-footer-item'>Progress Report</div>
+            </div>
+            <div>
+                <div class='site-footer-title'>Learning</div>
+                <div class='site-footer-item'>Personal forgetting curve</div>
+                <div class='site-footer-item'>Bloom's Taxonomy quizzes</div>
+                <div class='site-footer-item'>Mistake Book</div>
+                <div class='site-footer-item'>XP and streak tracking</div>
+                <div class='site-footer-item'>System health monitoring</div>
+            </div>
+            <div>
+                <div class='site-footer-title'>Resources</div>
+                <div class='site-footer-item'><a href='https://github.com/Abhishek06-07/smriti' target='_blank'>GitHub ↗</a></div>
+                <div class='site-footer-item'><a href='https://docs.streamlit.io/' target='_blank'>Streamlit docs ↗</a></div>
+                <div class='site-footer-item'><a href='https://supabase.com/docs' target='_blank'>Supabase docs ↗</a></div>
+                <div class='site-footer-item'><a href='https://console.groq.com/docs/overview' target='_blank'>Groq docs ↗</a></div>
+            </div>
+            <div>
+                <div class='site-footer-title'>Community</div>
+                <div class='site-footer-item'>Feedback inside app</div>
+                <div class='site-footer-item'>Built for students and revision-heavy learners</div>
+                <div class='site-footer-item'>Inspired by Ebbinghaus and Duolingo HLR</div>
+                <div class='site-footer-item'>Made in Kanpur, Uttar Pradesh</div>
+            </div>
+        </div>
+        <div class='site-footer-bottom'>
+            <div class='site-footer-copy'>© 2026 Smriti. Memory-first learning for serious students.</div>
+            <div class='site-footer-links'>
+                <a href='https://github.com/Abhishek06-07/smriti' target='_blank'>Repository</a>
+                <a href='https://smriti-sw5s3pp6kq3nsmi9se5nmj.streamlit.app' target='_blank'>Live App</a>
+                <a href='https://docs.streamlit.io/' target='_blank'>Docs</a>
+                <a href='https://supabase.com/' target='_blank'>Infra</a>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # ── MAIN RENDER ───────────────────────────────────────────
 def render_home(topics, user_id, load_topics_fn):
     """Main home dashboard render function"""
@@ -1638,6 +1766,9 @@ def render_home(topics, user_id, load_topics_fn):
                 </div>
             </div>
             """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    render_system_health()
 
     # ── TODAY'S STUDY PLAN ───────────────────────────────
     st.markdown("---")
@@ -1916,6 +2047,7 @@ if not st.session_state.user:
         create_landing_page()
     else:
         create_auth_page()
+    render_site_footer()
     st.stop()
 
 # ── ONBOARDING CHECK — one time only ──────────────────────
@@ -1925,8 +2057,10 @@ if "onboarding_done" not in st.session_state:
     # Check DB first
     ob_data = get_onboarding(user_id)
     if ob_data:
+        summary, emoji, _color = get_summary_info(ob_data.get("user_detail", ""))
         st.session_state.onboarding_done = True
-        st.session_state.user_summary    = SUMMARY_MAP.get(ob_data.get("user_detail",""), "Student")
+        st.session_state.user_summary    = summary
+        st.session_state.user_emoji      = emoji
     else:
         st.session_state.onboarding_done = False
 
@@ -1978,7 +2112,7 @@ page_titles = {
     "Feedback": "Feedback",
 }
 current_page_title = page_titles.get(current_page, current_page)
-user_summary = st.session_state.get("user_summary", "Student")
+user_summary = normalize_user_summary(st.session_state.get("user_summary", "Student"))
 email_local = user_email.split("@")[0] if user_email else "User"
 initial_parts = [part[0].upper() for part in email_local.replace(".", " ").replace("_", " ").split() if part]
 profile_initials = "".join(initial_parts[:2]) if initial_parts else "SM"
@@ -2195,6 +2329,99 @@ def format_mistake_answer(result_item):
         return str(result_item.get("correct_ans", "")).strip()
 
     return str(result_item.get("correct_ans", "")).strip()
+
+def get_system_health():
+    status = {
+        "model": {"ok": False, "label": "Fallback", "detail": "Trained bundle not loaded"},
+        "supabase": {"ok": False, "label": "Disconnected", "detail": "Not checked"},
+        "groq": {"ok": False, "label": "Unavailable", "detail": "API key missing"},
+    }
+
+    model_status = get_model_status()
+    if model_status.get("loaded"):
+        status["model"] = {
+            "ok": True,
+            "label": "Trained Model Active",
+            "detail": f"R² {model_status['r2_score']:.4f} · RMSE {model_status['rmse']:.4f}",
+        }
+
+    try:
+        sb = get_supabase()
+        sb.table("topics").select("id").limit(1).execute()
+        status["supabase"] = {
+            "ok": True,
+            "label": "Connected",
+            "detail": "Supabase queries are working",
+        }
+    except Exception as exc:
+        status["supabase"] = {
+            "ok": False,
+            "label": "Disconnected",
+            "detail": str(exc),
+        }
+
+    try:
+        groq_key = None
+        try:
+            groq_key = st.secrets.get("GROQ_API_KEY")
+        except Exception:
+            groq_key = None
+        groq_key = groq_key or os.getenv("GROQ_API_KEY")
+        if groq_key:
+            from question_generator import get_client
+            get_client()
+            status["groq"] = {
+                "ok": True,
+                "label": "Ready",
+                "detail": "Groq client initialized",
+            }
+    except Exception as exc:
+        status["groq"] = {
+            "ok": False,
+            "label": "Unavailable",
+            "detail": str(exc),
+        }
+
+    return status
+
+def render_system_health():
+    health = get_system_health()
+    model_status = get_model_status()
+
+    st.markdown("### System Health")
+    cols = st.columns(3)
+    items = [
+        ("Model", health["model"]),
+        ("Supabase", health["supabase"]),
+        ("Groq Quiz", health["groq"]),
+    ]
+
+    for col, (title, item) in zip(cols, items):
+        tone = "#059669" if item["ok"] else "#DC2626"
+        tone_bg = "#F0FDF4" if item["ok"] else "#FEF2F2"
+        with col:
+            st.markdown(f"""
+            <div style='background:{tone_bg};border:1px solid {tone}33;border-radius:12px;
+                        padding:16px 18px;height:100%;box-shadow:0 1px 6px rgba(15,27,45,0.05);'>
+                <div style='font-size:10px;color:#64748B;text-transform:uppercase;
+                            letter-spacing:0.12em;font-weight:600;margin-bottom:8px;'>
+                    {title}
+                </div>
+                <div style='font-weight:700;color:{tone};font-size:1rem;margin-bottom:6px;'>
+                    {item["label"]}
+                </div>
+                <div style='color:#475569;font-size:0.82rem;line-height:1.55;'>
+                    {item["detail"]}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    if model_status.get("loaded"):
+        st.caption(
+            f"Reported trained-model accuracy: R² = {model_status['r2_score']:.4f}, RMSE = {model_status['rmse']:.4f}."
+        )
+    else:
+        st.caption("Trained model bundle is not loaded, so the app is using heuristic fallback behavior.")
 
 # ════════════════════════════════════════════════════════
 # PAGE 1 — HOME (Modular — see dashboard_home.py)
@@ -2676,12 +2903,14 @@ elif page == "Quiz":
             st.markdown("")
             if st.button("🚀 Generate Questions", use_container_width=True, key="quiz_generate"):
                 with st.spinner(f"🔍 Fetching web content + generating {sel_level['name']} questions..."):
+                    quiz_user_profile = normalize_user_summary(st.session_state.get("user_summary", "Student"))
                     questions, context, error = generate_questions(
                         topic_name          = selected["topic_name"],
                         subject             = selected["subject"],
                         bloom_level         = st.session_state.selected_bloom,
                         understanding_score = selected["understanding_score"],
                         retention_pct       = selected["retention"],
+                        user_profile        = quiz_user_profile,
                     )
                 if error:
                     st.error(f"❌ {error}")
@@ -3627,3 +3856,5 @@ elif page == "Feedback":
                         "Feedback could not be saved to Supabase. Please recheck your feedback table columns and policies."
                     )
                     st.caption(f"Technical details: {error}")
+
+render_site_footer()

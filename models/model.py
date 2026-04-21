@@ -122,21 +122,15 @@ def get_retention_curve(understanding_score, date_learned, review_count=0):
 
 # ── CLASSIFY TOPIC ────────────────────────────────────────
 def classify_topic(retention_pct, review_count):
-    models = load_models()
-    if models:
-        try:
-            understanding_score = retention_pct / 10.0
-            X     = build_features(0, understanding_score, review_count)
-            label = models["classifier"].predict(X)[0]
-            if label == "Strong":    return "Strong 💪",  "green"
-            elif label == "At-Risk": return "At-Risk ⚠️", "orange"
-            else:                    return "Weak 🔴",     "red"
-        except Exception:
-            pass
-
-    if retention_pct >= 70:   return "Strong 💪",  "green"
-    elif retention_pct >= 40: return "At-Risk ⚠️", "orange"
-    else:                     return "Weak 🔴",     "red"
+    # Runtime topic status is derived from current retention bands.
+    # The bundled classifier was trained on richer features than we
+    # reliably have at inference time inside the app UI.
+    if retention_pct >= 70:
+        return "Strong 💪", "green"
+    elif retention_pct >= 40:
+        return "At-Risk ⚠️", "orange"
+    else:
+        return "Weak 🔴", "red"
 
 # ── CLUSTERING ────────────────────────────────────────────
 def cluster_topics(topics_data):

@@ -90,6 +90,10 @@ def build_prompt(topic_name, subject, bloom_level, num_questions, question_mix, 
 
     return f"""You are an expert {subject} teacher generating a quiz for a {user_profile}.
 
+Match the difficulty, examples, vocabulary, and framing to this learner profile.
+If the learner profile mentions a class, degree, or competitive exam, keep the quiz aligned to that exact level.
+Do not generate college-level questions for a school student, and do not generate beginner school-level questions for advanced exam prep unless the Bloom level explicitly requires basic recall.
+
 TOPIC: {topic_name} | SUBJECT: {subject}
 BLOOM'S LEVEL: L{bloom_level} — {level['name']} | INSTRUCTION: {level['hint']}
 {ctx_section}
