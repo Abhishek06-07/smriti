@@ -56,15 +56,37 @@ section.main > div {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 60px;
+    min-height: 76px;
     box-shadow: 0 2px 16px rgba(15,27,45,0.18);
     position: sticky;
     top: 0;
     z-index: 999;
 }
+.nav-brand-shell {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.nav-brand-mark {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(201,168,76,0.25), rgba(255,255,255,0.08));
+    border: 1px solid rgba(201,168,76,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.nav-brand-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
 .nav-brand {
     font-family: 'Playfair Display', Georgia, serif;
-    font-size: 1.35rem;
+    font-size: 1.5rem;
     font-weight: 700;
     color: #FFFFFF;
     display: flex;
@@ -78,6 +100,78 @@ section.main > div {
     letter-spacing: 0.12em;
     text-transform: uppercase;
     margin-left: 4px;
+}
+.nav-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.nav-context-chip {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    padding: 6px 12px;
+    color: rgba(255,255,255,0.72);
+    font-size: 0.78rem;
+}
+.nav-context-sub {
+    color: rgba(255,255,255,0.42);
+    font-size: 11px;
+}
+.profile-anchor {
+    margin-top: -128px;
+    margin-bottom: -46px;
+    position: relative;
+    z-index: 1000;
+}
+.profile-card {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+}
+.profile-mini {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.profile-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0F1B2D, #2D5A8E);
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+    border: 2px solid rgba(201,168,76,0.45);
+}
+.profile-mini-copy {
+    min-width: 0;
+}
+.profile-mini-label {
+    color: #64748B;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+}
+.profile-mini-email {
+    color: #0F1B2D;
+    font-size: 0.82rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+.profile-popover-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
 }
 
 /* ── PAGE HEADER ── */
@@ -1855,46 +1949,183 @@ if "delete_confirm_topic_id" not in st.session_state:
 
 # ── TOP NAVIGATION ────────────────────────────────────────
 user_email = st.session_state.user.email
+def navigate_to(page_name):
+    if st.session_state.page != page_name:
+        st.session_state.page = page_name
+        st.rerun()
+
+# Compact sticky nav
+nav_topics_raw = get_all_topics(user_id=user_id)
+nav_topics = [{
+    "id": r[0], "topic_name": r[1], "subject": r[2],
+    "understanding_score": r[3], "date_learned": r[4],
+    "last_reviewed": r[5], "review_count": r[6] if r[6] else 0
+} for r in nav_topics_raw]
+nav_priority = get_review_priority(nav_topics) if nav_topics else []
+nav_review_count = len([t for t in nav_priority if "Weak" in t["label"] or "At-Risk" in t["label"]])
+nav_mistakes, _nav_mistake_error = get_mistake_book(user_id=user_id)
+nav_mistake_count = len(nav_mistakes) if nav_mistakes else 0
+current_page = st.session_state.page
+page_titles = {
+    "Home": "Home",
+    "Dashboard": "Dashboard",
+    "Add Topic": "Add Topic",
+    "Review List": "Review List",
+    "Quiz": "Quiz",
+    "Mistake Book": "Mistake Book",
+    "Progress Report": "Progress Report",
+    "Leaderboard": "Leaderboard",
+    "Feedback": "Feedback",
+}
+current_page_title = page_titles.get(current_page, current_page)
+user_summary = st.session_state.get("user_summary", "Student")
+email_local = user_email.split("@")[0] if user_email else "User"
+initial_parts = [part[0].upper() for part in email_local.replace(".", " ").replace("_", " ").split() if part]
+profile_initials = "".join(initial_parts[:2]) if initial_parts else "SM"
+
 st.markdown(f"""
 <div class='nav-wrapper'>
-    <div class='nav-brand'>
-        🧠 <span>Smriti</span>
-        <span class='nav-tagline'>Memory Intelligence</span>
-    </div>
-    <div style='color:rgba(255,255,255,0.4);font-size:11px;'>
-        {user_email}
+    <div class='nav-brand-shell'>
+        <div class='nav-brand-mark'>🧠</div>
+        <div class='nav-brand-copy'>
+            <div class='nav-brand'>
+                <span>Smriti</span>
+                <span class='nav-tagline'>Memory Intelligence</span>
+            </div>
+            <div class='nav-meta'>
+                <div class='nav-context-chip'>Now Viewing: {current_page_title}</div>
+                <div class='nav-context-sub'>Built for smarter revision, stronger recall, and daily momentum</div>
+            </div>
+        </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Nav buttons
-c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11 = st.columns([0.4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.7])
-with c1:
-    st.markdown("")
-with c2:
-    if st.button("🏠 Home",         use_container_width=True, key="nav_home"):   st.session_state.page = "Home"
-with c3:
-    if st.button("➕ Add Topic",    use_container_width=True, key="nav_add"):    st.session_state.page = "Add Topic"
-with c4:
-    if st.button("📊 Dashboard",   use_container_width=True, key="nav_dash"):   st.session_state.page = "Dashboard"
-with c5:
-    if st.button("📋 Review List", use_container_width=True, key="nav_review"): st.session_state.page = "Review List"
-with c6:
-    if st.button("🧪 Quiz",        use_container_width=True, key="nav_quiz"):   st.session_state.page = "Quiz"
-with c7:
-    if st.button("🏆 Leaderboard", use_container_width=True, key="nav_leader"): st.session_state.page = "Leaderboard"
-with c8:
-    if st.button("📓 Mistakes",    use_container_width=True, key="nav_mistakes"): st.session_state.page = "Mistake Book"
-with c9:
-    if st.button("📄 Report",      use_container_width=True, key="nav_report"): st.session_state.page = "Progress Report"
-with c10:
-    if st.button("💬 Feedback",    use_container_width=True, key="nav_feedback"): st.session_state.page = "Feedback"
-with c11:
-    if st.button("🚪 Logout",      use_container_width=True, key="nav_logout"):
-        sign_out()
-        st.session_state.user = None
-        st.session_state.clear()
-        st.rerun()
+st.markdown("""
+<style>
+.compact-nav {
+    position: sticky;
+    top: 60px;
+    z-index: 998;
+    background: rgba(241,244,248,0.92);
+    backdrop-filter: blur(10px);
+    padding: 10px 0 14px;
+    margin-bottom: 12px;
+}
+.compact-nav-shell {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 16px;
+    padding: 14px 16px;
+    box-shadow: 0 8px 28px rgba(15,27,45,0.08);
+}
+.compact-nav-label {
+    font-size: 10px;
+    color: #64748B;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.compact-nav-page {
+    font-family: Georgia, serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #0F1B2D;
+}
+</style>
+""", unsafe_allow_html=True)
+more_options = [
+    "More",
+    f"Review ({nav_review_count})",
+    "Dashboard",
+    f"Mistakes ({nav_mistake_count})",
+    "Leaderboard",
+    "Feedback",
+]
+more_to_page = {
+    f"Review ({nav_review_count})": "Review List",
+    "Dashboard": "Dashboard",
+    f"Mistakes ({nav_mistake_count})": "Mistake Book",
+    "Leaderboard": "Leaderboard",
+    "Feedback": "Feedback",
+}
+current_more_label = next(
+    (label for label, page_name in more_to_page.items() if page_name == current_page),
+    "More"
+)
+
+profile_spacer, profile_col = st.columns([4.7, 1.45])
+with profile_col:
+    st.markdown("<div class='profile-anchor'><div class='profile-card'>", unsafe_allow_html=True)
+    if hasattr(st, "popover"):
+        st.markdown("<div class='profile-popover-trigger'>", unsafe_allow_html=True)
+        with st.popover(f"{profile_initials}  Account", use_container_width=True):
+            st.markdown(f"""
+            <div class='profile-mini' style='margin-bottom:14px;'>
+                <div class='profile-avatar'>{profile_initials}</div>
+                <div class='profile-mini-copy'>
+                    <div class='profile-mini-label'>Account</div>
+                    <div class='profile-mini-email'>{user_email}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.caption(f"{user_summary} · Currently on {current_page_title}")
+            if st.button("Logout", use_container_width=True, key="profile_logout"):
+                sign_out()
+                st.session_state.user = None
+                st.session_state.clear()
+                st.rerun()
+    else:
+        with st.expander("Account", expanded=False):
+            st.markdown(f"**{user_email}**")
+            st.caption(f"{user_summary} · Currently on {current_page_title}")
+            if st.button("Logout", use_container_width=True, key="profile_logout_fallback"):
+                sign_out()
+                st.session_state.user = None
+                st.session_state.clear()
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div></div>", unsafe_allow_html=True)
+
+st.markdown("<div class='compact-nav'><div class='compact-nav-shell'>", unsafe_allow_html=True)
+nav_meta_col, nav_tab1, nav_tab2, nav_tab3, nav_tab4, nav_more_col = st.columns([1.4, 1, 1.05, 1, 1, 1.2])
+with nav_meta_col:
+    st.markdown(
+        f"""
+        <div class='compact-nav-label'>Smriti</div>
+        <div class='compact-nav-page'>{page_titles.get(current_page, current_page)}</div>
+        """,
+        unsafe_allow_html=True
+    )
+with nav_tab1:
+    home_label = "Home •" if current_page == "Home" else "Home"
+    if st.button(home_label, use_container_width=True, key="nav_home"):
+        navigate_to("Home")
+with nav_tab2:
+    add_label = "Add Topic •" if current_page == "Add Topic" else "Add Topic"
+    if st.button(add_label, use_container_width=True, key="nav_add"):
+        navigate_to("Add Topic")
+with nav_tab3:
+    quiz_label = "Quiz •" if current_page == "Quiz" else "Quiz"
+    if st.button(quiz_label, use_container_width=True, key="nav_quiz"):
+        navigate_to("Quiz")
+with nav_tab4:
+    report_label = "Report •" if current_page == "Progress Report" else "Report"
+    if st.button(report_label, use_container_width=True, key="nav_report"):
+        navigate_to("Progress Report")
+with nav_more_col:
+    selected_more = st.selectbox(
+        "More",
+        options=more_options,
+        index=more_options.index(current_more_label) if current_more_label in more_options else 0,
+        key="nav_more_select",
+        label_visibility="collapsed",
+    )
+    if selected_more != "More" and more_to_page.get(selected_more) != current_page:
+        navigate_to(more_to_page[selected_more])
+
+st.markdown("</div></div>", unsafe_allow_html=True)
 
 page = st.session_state.page
 
